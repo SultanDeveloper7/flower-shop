@@ -16,6 +16,6 @@ jobs:
       - name: Build and restart Docker container
         shell: powershell
         run: |
-          $env:PATH += ";C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\Docker;C:\ProgramData\DockerDesktop\version-bin"
+          $env:PATH += ";C:\Users\SultanKingGD\AppData\Local\Programs\DockerDesktop\resources\bin"
           docker compose up -d --build --remove-orphans
           docker image prune -f
