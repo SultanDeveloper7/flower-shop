@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream-50: #FDFBF9;
+  --color-cream-100: #FAF7F2;
+  --color-cream-200: #F3EDE2;
+  --color-cream-300: #E6DDD0;
+
+  --color-espresso-800: #3D302B;
+  --color-espresso-900: #2C221E;
+
+  --color-rosewarm-100: #F7ECEE;
+  --color-rosewarm-300: #D8B2B8;
+  --color-rosewarm-500: #B57B84;
+  --color-rosewarm-600: #9C626B;
+  --color-rosewarm-700: #7F4B53;
+
+  --color-gold-100: #F9F3E6;
+  --color-gold-400: #D4B475;
+  --color-gold-500: #C5A059;
+  --color-gold-600: #A8843E;
+
+  /* Custom Fonts */
+  --font-sans: var(--font-tajawal), sans-serif;
+  --font-serif: var(--font-amiri), serif;
+
+  /* Custom Shadows */
+  --shadow-luxury: 0 10px 30px -5px rgba(44, 34, 30, 0.06), 0 4px 12px -2px rgba(44, 34, 30, 0.04);
+  --shadow-luxury-hover: 0 20px 40px -10px rgba(181, 123, 132, 0.16), 0 8px 16px -4px rgba(44, 34, 30, 0.06);
+}
+
+/* Custom utility classes from your HTML template */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float {
+  animation: floatSlow 5s ease-in-out infinite;
+}
