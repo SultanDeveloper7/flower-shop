@@ -3,7 +3,7 @@ name: Auto Deploy Next.js to Windows Server
 on:
   push:
     branches:
-      - main # Change to 'master' if your default branch is master
+      - main
 
 jobs:
   deploy:
@@ -16,5 +16,6 @@ jobs:
       - name: Build and restart Docker container
         shell: powershell
         run: |
+          $env:PATH += ";C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\Docker;C:\ProgramData\DockerDesktop\version-bin"
           docker compose up -d --build --remove-orphans
           docker image prune -f
