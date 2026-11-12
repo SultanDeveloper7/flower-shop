@@ -14,11 +14,11 @@ export interface SessionUser {
 export async function createSession(user: SessionUser) {
   const sessionId = uuidv4();
   await redis.set(`session:${sessionId}`, JSON.stringify(user), "EX", SESSION_TTL);
-
+  const isHttps = process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false;
   const cookieStore = await cookies();
   cookieStore.set("session_id", sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps,
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL,
