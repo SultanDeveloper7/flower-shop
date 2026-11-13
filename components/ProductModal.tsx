@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CATEGORIES, Product } from "@/constants/catalog";
+import { Category, Product } from "@/constants/catalog";
 
 interface ProductModalProps {
   product: Product | null;
+  categories: Category[];
   onClose: () => void;
   onConfirmAdd: (product: Product, quantity: number, giftMessage: string, packagingColor: string) => void;
 }
@@ -20,7 +21,7 @@ const QUICK_PHRASES = [
 
 const PACKAGING_OPTIONS = ["نفس تنسيق الصورة", "بيج كريمي فاخر", "وردي باستيل ناعم", "أسود ملكي مع شريط ذهبي", "أبيض شفاف (أورجانزا)"];
 
-export default function ProductModal({ product, onClose, onConfirmAdd }: ProductModalProps) {
+export default function ProductModal({ product, categories, onClose, onConfirmAdd }: ProductModalProps) {
   const [giftMessage, setGiftMessage] = useState("");
   const [packagingColor, setPackagingColor] = useState(PACKAGING_OPTIONS[0]);
   const [quantity, setQuantity] = useState(1);
@@ -47,7 +48,7 @@ export default function ProductModal({ product, onClose, onConfirmAdd }: Product
 
   if (!product) return null;
 
-  const category = CATEGORIES.find((c) => c.id === product.categoryId);
+  const category = categories.find((c) => c.id === product.categoryId);
 
   const adjustQty = (delta: number) => {
     setQuantity((prev) => Math.max(1, Math.min(20, prev + delta)));

@@ -1,15 +1,16 @@
 // src/components/CategoryOverview.tsx
 "use client";
 
-import { CATEGORIES, Product } from "@/constants/catalog";
+import { Category, Product } from "@/constants/catalog";
 
 interface Props {
   activeCategoryId: number | "all";
   onSelectCategory: (id: number | "all") => void;
   products: Product[];
+  categories: Category[];
 }
 
-export default function CategoryOverview({ activeCategoryId, onSelectCategory, products }: Props) {
+export default function CategoryOverview({ categories, activeCategoryId, onSelectCategory, products }: Props) {
   return (
     <section id="categories-overview" className="py-12 bg-cream-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,7 +25,7 @@ export default function CategoryOverview({ activeCategoryId, onSelectCategory, p
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5 sm:gap-4">
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const isSelected = activeCategoryId === cat.id;
             const count = products.filter((p) => p.categoryId === cat.id).length;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, CartItem, STORE_WHATSAPP_NUMBER } from "@/constants/catalog";
+import { CartItem, Category, STORE_WHATSAPP_NUMBER } from "@/constants/catalog";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -9,9 +9,10 @@ interface CartDrawerProps {
   cart: CartItem[];
   onUpdateQty: (cartItemId: string, delta: number) => void;
   onRemove: (cartItemId: string) => void;
+  categories: Category[];
 }
 
-export default function CartDrawer({ isOpen, onClose, cart, onUpdateQty, onRemove }: CartDrawerProps) {
+export default function CartDrawer({ isOpen, categories, onClose, cart, onUpdateQty, onRemove }: CartDrawerProps) {
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
 
@@ -28,7 +29,7 @@ export default function CartDrawer({ isOpen, onClose, cart, onUpdateQty, onRemov
     ];
 
     cart.forEach((item, index) => {
-      const cat = CATEGORIES.find((c) => c.id === item.product.categoryId);
+      const cat = categories.find((c) => c.id === item.product.categoryId);
       lines.push(`${index + 1}. *${item.product.title}* (${cat ? cat.name : ""})`);
       lines.push(`   • الكمية: ${item.quantity} × ${item.product.price} ر.س = *${item.quantity * item.product.price} ر.س*`);
       lines.push(`   • لون التغليف: ${item.packagingColor}`);

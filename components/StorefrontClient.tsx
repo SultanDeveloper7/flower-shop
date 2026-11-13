@@ -155,7 +155,12 @@ export default function StorefrontClient({ initialProducts, categories, session,
 
       <HeroSection />
 
-      <CategoryOverview activeCategoryId={activeCategoryId} onSelectCategory={setActiveCategoryId} products={initialProducts} />
+      <CategoryOverview
+        categories={categories}
+        activeCategoryId={activeCategoryId}
+        onSelectCategory={setActiveCategoryId}
+        products={initialProducts}
+      />
 
       {/* Sticky Category Bar & Catalog */}
       <section id="products-section" className="py-8 flex-1">
@@ -229,6 +234,7 @@ export default function StorefrontClient({ initialProducts, categories, session,
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredProducts.map((product) => (
               <ProductCard
+              categories={categories}
                 key={product.id}
                 product={product}
                 onOpenModal={(prod) => setSelectedProduct(prod)}
@@ -260,10 +266,11 @@ export default function StorefrontClient({ initialProducts, categories, session,
       </footer>
 
       {/* Gift Card & Wrapping Customization Modal */}
-      <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onConfirmAdd={handleModalConfirmAdd} />
+      <ProductModal categories={categories} product={selectedProduct} onClose={() => setSelectedProduct(null)} onConfirmAdd={handleModalConfirmAdd} />
 
       {/* Slide-Out Shopping Cart Drawer */}
       <CartDrawer
+        categories={categories}
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         cart={cart}

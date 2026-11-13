@@ -1,15 +1,16 @@
 "use client";
 
-import { CATEGORIES, Product, STORE_WHATSAPP_NUMBER } from "@/constants/catalog";
+import { Category, Product, STORE_WHATSAPP_NUMBER } from "@/constants/catalog";
 
 interface ProductCardProps {
   product: Product;
+  categories: Category[];
   onOpenModal: (product: Product) => void;
   onQuickAdd: (product: Product) => void;
 }
 
-export default function ProductCard({ product, onOpenModal, onQuickAdd }: ProductCardProps) {
-  const category = CATEGORIES.find((c) => c.id === product.categoryId);
+export default function ProductCard({ product, categories, onOpenModal, onQuickAdd }: ProductCardProps) {
+  const category = categories.find((c) => c.id === product.categoryId);
 
   const directWhatsAppUrl = `https://wa.me/${STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(
     `مرحباً زهرة لينا 🌸، أود طلب الباقة التالية:\n- الاسم: ${product.title}\n- السعر: ${product.price} ر.س`,
