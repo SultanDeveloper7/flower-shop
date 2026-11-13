@@ -1,9 +1,39 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { RowDataPacket } from "mysql2";
+
+// External folder on the Windows Server
+const UPLOAD_DIR = process.env.UPLOAD_DIR || "C:/images/bouquets";
+const IMAGE_ROUTE_PREFIX = "/api/images/bouquets/";
+
+// Helper to save an uploaded File into C:/images/bouquets/
+async function saveImageToExternalFolder(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  const ext = (path.extname(file.name) || ".jpg").toLowerCase();
+  const fileName = `${uuidv4()}${ext}`;
+
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(path.join(UPLOAD_DIR, fileName), buffer);
+
+  return `${IMAGE_ROUTE_PREFIX}${fileName}`;
+}
+
+// Helper to delete old local file from C:/images/bouquets/ when product is updated/deleted
+async function deleteOldExternalImage(imageUrl?: string | null) {
+  if (!imageUrl || !imageUrl.startsWith(IMAGE_ROUTE_PREFIX)) return;
+  try {
+    const fileName = path.basename(imageUrl);
+    await unlink(path.join(UPLOAD_DIR, fileName));
+  } catch {
+    // Ignore if file was already removed manually
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -31,19 +61,8 @@ export async function POST(req: Request) {
 
     let finalImageUrl = externalImageUrl || "";
 
-    // If a file was uploaded from device, save it to public/uploads
     if (file && file.size > 0) {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      const ext = path.extname(file.name) || ".jpg";
-      const fileName = `${uuidv4()}${ext}`;
-      const uploadDir = path.join(process.cwd(), "public", "uploads");
-
-      await mkdir(uploadDir, { recursive: true });
-      await writeFile(path.join(uploadDir, fileName), buffer);
-
-      finalImageUrl = `/uploads/${fileName}`;
+      finalImageUrl = await saveImageToExternalFolder(file);
     }
 
     if (!finalImageUrl) {
@@ -57,33 +76,12 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({
-      message: "تم نشر الباقة بنجاح في المتجر!",
+      message: "تم نشر الباقة وحفظ الصورة في المجلد الخارجي بنجاح!",
       imageUrl: finalImageUrl,
     });
   } catch (error) {
     console.error("Product upload error:", error);
     return NextResponse.json({ error: "حدث خطأ أثناء رفع المنتج" }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    const session = await getSession();
-    if (!session || session.role !== "ADMIN") {
-      return NextResponse.json({ error: "غير مصرح لك بالحذف" }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const id = Number(searchParams.get("id"));
-    if (!id) {
-      return NextResponse.json({ error: "رقم المنتج غير صالح" }, { status: 400 });
-    }
-
-    await pool.query("DELETE FROM products WHERE id = ?", [id]);
-    return NextResponse.json({ message: "تم حذف الباقة بنجاح" });
-  } catch (error) {
-    console.error("Product delete error:", error);
-    return NextResponse.json({ error: "تعذر حذف المنتج" }, { status: 500 });
   }
 }
 
@@ -114,19 +112,11 @@ export async function PUT(req: Request) {
 
     let finalImageUrl = existingOrExternalUrl || "";
 
-    // If the admin selected a new image file from device, save it to public/uploads
+    // If admin uploaded a new photo, save it to C:/images/bouquets and delete the old file
     if (file && file.size > 0) {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      const ext = path.extname(file.name) || ".jpg";
-      const fileName = `${uuidv4()}${ext}`;
-      const uploadDir = path.join(process.cwd(), "public", "uploads");
-
-      await mkdir(uploadDir, { recursive: true });
-      await writeFile(path.join(uploadDir, fileName), buffer);
-
-      finalImageUrl = `/uploads/${fileName}`;
+      const [oldRows] = await pool.query<RowDataPacket[]>("SELECT image_url FROM products WHERE id = ?", [id]);
+      await deleteOldExternalImage(oldRows[0]?.image_url);
+      finalImageUrl = await saveImageToExternalFolder(file);
     }
 
     if (!finalImageUrl) {
@@ -135,14 +125,7 @@ export async function PUT(req: Request) {
 
     await pool.query(
       `UPDATE products 
-       SET category_id = ?, 
-           title = ?, 
-           description = ?, 
-           price = ?, 
-           image_url = ?, 
-           points_price = ?, 
-           tags = ?, 
-           is_featured = ?
+       SET category_id = ?, title = ?, description = ?, price = ?, image_url = ?, points_price = ?, tags = ?, is_featured = ?
        WHERE id = ?`,
       [categoryId, title, description, price, finalImageUrl, pointsPrice, tags, isFeatured, id],
     );
@@ -165,7 +148,6 @@ export async function PATCH(req: Request) {
     }
 
     const { id, isActive } = await req.json();
-
     if (!id || typeof isActive !== "boolean") {
       return NextResponse.json({ error: "بيانات الحالة غير صالحة" }, { status: 400 });
     }
@@ -179,5 +161,30 @@ export async function PATCH(req: Request) {
   } catch (error) {
     console.error("Product toggle active error:", error);
     return NextResponse.json({ error: "حدث خطأ أثناء تغيير حالة توفر الباقة" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "ADMIN") {
+      return NextResponse.json({ error: "غير مصرح لك بالحذف" }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = Number(searchParams.get("id"));
+    if (!id) {
+      return NextResponse.json({ error: "رقم المنتج غير صالح" }, { status: 400 });
+    }
+
+    // Remove the image file from C:/images/bouquets/ before deleting the DB row
+    const [rows] = await pool.query<RowDataPacket[]>("SELECT image_url FROM products WHERE id = ?", [id]);
+    await deleteOldExternalImage(rows[0]?.image_url);
+
+    await pool.query("DELETE FROM products WHERE id = ?", [id]);
+    return NextResponse.json({ message: "تم حذف الباقة وصورتها بنجاح" });
+  } catch (error) {
+    console.error("Product delete error:", error);
+    return NextResponse.json({ error: "تعذر حذف المنتج" }, { status: 500 });
   }
 }
