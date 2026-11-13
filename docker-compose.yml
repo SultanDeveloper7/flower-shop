@@ -9,5 +9,9 @@ services:
       - "3000:3000"
     env_file:
       - C:/flower-shop-config/.env.production
+    environment:
+      - UPLOAD_DIR=/app/uploads/bouquets
+    volumes:
+      - C:/images/bouquets:/app/uploads/bouquets
     extra_hosts:
       - "host.docker.internal:host-gateway"

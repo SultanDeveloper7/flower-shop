@@ -27,6 +27,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Create the upload mount folder and grant write permissions to nextjs
+RUN mkdir -p /app/uploads/bouquets && chown -R nextjs:nodejs /app/uploads && chmod -R 777 /app/uploads/bouquets
+
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000

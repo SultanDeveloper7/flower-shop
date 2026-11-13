@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR || "C:/images/bouquets";
+const UPLOAD_DIR = process.env.UPLOAD_DIR || (process.platform === "win32" ? "C:/images/bouquets" : "/app/uploads/bouquets");
 
 const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
