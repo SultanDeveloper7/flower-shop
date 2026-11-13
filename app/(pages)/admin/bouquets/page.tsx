@@ -5,8 +5,8 @@ import { pool } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 import TopBar from "@/components/TopBar";
 import LogoutButton from "@/components/LogoutButton";
-import UploadBouquetForm from "./UploadBouquetForm";
 import { Product } from "@/constants/catalog";
+import AdminDashboardTabs from "./AdminDashboardTabs";
 
 export default async function AdminBouquetsPage() {
   const session = await getSession();
@@ -76,7 +76,8 @@ export default async function AdminBouquetsPage() {
 
       {/* Main Content */}
       <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
-        <UploadBouquetForm initialProducts={products} />
+        <AdminDashboardTabs initialProducts={products} />
+        {/* <UploadBouquetForm initialProducts={products} /> */}
       </main>
     </div>
   );

@@ -40,6 +40,17 @@ if (!globalForRedis.redisClient) {
 
 // Unified wrapper used by src/lib/auth.ts
 export const redis = {
+  async keys(pattern: string): Promise<string[]> {
+    if (globalForRedis.isRedisConnected && client.status === "ready") {
+      try {
+        return await client.keys(pattern);
+      } catch {
+        // Fall through to memory fallback
+      }
+    }
+    const prefix = pattern.replace("*", "");
+    return Array.from(memoryFallback.keys()).filter((k) => k.startsWith(prefix));
+  },
   async set(key: string, value: string, mode?: string, duration?: number) {
     if (globalForRedis.isRedisConnected && client.status === "ready") {
       try {
