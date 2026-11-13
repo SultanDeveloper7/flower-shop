@@ -17,5 +17,20 @@ jobs:
         shell: powershell
         run: |
           $env:PATH += ";C:\Users\SultanKingGD\AppData\Local\Programs\DockerDesktop\resources\bin"
-          docker compose up -d --build --remove-orphans
+          docker compose build --no-cache
+          docker compose up -d --force-recreate
           docker image prune -f
+
+services:
+  nextjs-web:
+    container_name: nextjs-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - C:/flower-shop-config/.env.production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
