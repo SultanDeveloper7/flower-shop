@@ -10,6 +10,16 @@ import AdminDashboardTabs from "./AdminDashboardTabs";
 
 export default async function AdminBouquetsPage() {
   const session = await getSession();
+  const [catRows] = await pool.query<RowDataPacket[]>("SELECT * FROM categories ORDER BY sort_order ASC, id ASC");
+  const categories = catRows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description || "",
+    icon: c.icon || "fa-solid fa-spa",
+    badge: c.badge || "قسم مميز",
+    sortOrder: Number(c.sort_order || c.id),
+    isActive: Boolean(c.is_active),
+  }));
 
   // Redirect non-admins immediately
   if (!session || session.role !== "ADMIN") {
@@ -77,8 +87,7 @@ export default async function AdminBouquetsPage() {
 
       {/* Main Content */}
       <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
-        <AdminDashboardTabs initialProducts={products} />
-        {/* <UploadBouquetForm initialProducts={products} /> */}
+        <AdminDashboardTabs initialProducts={products} initialCategories={categories} />
       </main>
     </div>
   );

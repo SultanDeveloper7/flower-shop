@@ -8,6 +8,14 @@ export default async function HomePage() {
   const session = await getSession();
 
   const [rows] = await pool.query<RowDataPacket[]>("SELECT * FROM products WHERE is_active = TRUE ORDER BY created_at DESC");
+  const [catRows] = await pool.query<RowDataPacket[]>("SELECT * FROM categories WHERE is_active = TRUE ORDER BY sort_order ASC, id ASC");
+  const categories = catRows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description || "",
+    icon: c.icon || "fa-solid fa-spa",
+    badge: c.badge || "قسم مميز",
+  }));
 
   let userPoints = 0;
   if (session) {
@@ -32,5 +40,5 @@ export default async function HomePage() {
     pointsPrice: r.points_price,
   }));
 
-  return <StorefrontClient initialProducts={products} session={session} userPoints={userPoints} />;
+  return <StorefrontClient initialProducts={products} categories={categories} session={session} userPoints={userPoints} />;
 }

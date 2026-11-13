@@ -2,13 +2,14 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { CATEGORIES, Product } from "@/constants/catalog";
+import { Category, Product } from "@/constants/catalog";
 
 interface Props {
+  categories: Category[];
   initialProducts: Product[];
 }
 
-export default function UploadBouquetForm({ initialProducts }: Props) {
+export default function UploadBouquetForm({ categories, initialProducts }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -139,7 +140,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
       if (!res.ok) {
         setStatus({ type: "error", text: data.error || "حدث خطأ أثناء النشر" });
       } else {
-        const catObj = CATEGORIES.find((c) => c.id === categoryId);
+        const catObj = categories.find((c) => c.id === categoryId);
         setStatus({
           type: "success",
           text: `تمت إضافة "${title}" بنجاح إلى (${catObj ? catObj.name : ""}) 🌸`,
@@ -363,7 +364,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
                   required
                   className="w-full rounded-xl bg-cream-50 border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-espresso-900 focus:border-rosewarm-500 focus:outline-none cursor-pointer"
                 >
-                  {CATEGORIES.map((cat) => (
+                  {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       القسم {cat.id}: {cat.name}
                     </option>
@@ -491,7 +492,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
               className="rounded-xl bg-cream-100 border border-cream-300 px-3.5 py-2 text-xs font-bold text-espresso-900 focus:outline-none cursor-pointer"
             >
               <option value="all">عرض كل الأقسام (1 - 10)</option>
-              {CATEGORIES.map((cat) => (
+              {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   القسم {cat.id}: {cat.name}
                 </option>
@@ -508,7 +509,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[480px] overflow-y-auto p-1">
             {filteredProducts.map((item) => {
-              const cat = CATEGORIES.find((c) => c.id === item.categoryId);
+              const cat = categories.find((c) => c.id === item.categoryId);
               const isItemActive = item.isActive ?? true;
 
               return (
@@ -663,7 +664,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
                     onChange={(e) => setEditCategoryId(Number(e.target.value))}
                     className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-espresso-900 focus:border-rosewarm-500 focus:outline-none cursor-pointer"
                   >
-                    {CATEGORIES.map((cat) => (
+                    {categories.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         القسم {cat.id}: {cat.name}
                       </option>

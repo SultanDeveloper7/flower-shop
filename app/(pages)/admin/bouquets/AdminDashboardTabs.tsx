@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Product } from "@/constants/catalog";
+import { Category, Product } from "@/constants/catalog";
 import UploadBouquetForm from "./UploadBouquetForm";
+import CategoriesManager from "./CategoriesManager";
 
 interface ActiveSessionItem {
   id: number;
@@ -50,8 +51,15 @@ function formatDeviceAgent(ua?: string) {
   };
 }
 
-export default function AdminDashboardTabs({ initialProducts }: { initialProducts: Product[] }) {
-  const [activeTab, setActiveTab] = useState<"bouquets" | "sessions" | "users">("bouquets");
+export default function AdminDashboardTabs({
+  initialProducts,
+  initialCategories,
+}: {
+  initialProducts: Product[];
+  initialCategories: Category[];
+}) {
+  const [activeTab, setActiveTab] = useState<"bouquets" | "sessions" | "users" | "categories">("bouquets");
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
 
   // Sessions State
   const [sessions, setSessions] = useState<ActiveSessionItem[]>([]);
@@ -197,7 +205,7 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
   return (
     <div className="space-y-6">
       {/* Top Navigation Tabs */}
-      <div className="bg-white p-2 rounded-3xl border border-cream-300 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="bg-white p-2 rounded-3xl border border-cream-300 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-2">
         <button
           type="button"
           onClick={() => setActiveTab("bouquets")}
@@ -207,6 +215,16 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
         >
           <i className="fa-solid fa-spa" />
           <span>إدارة الباقات والأقسام</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("categories")}
+          className={`py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === "categories" ? "bg-espresso-900 text-gold-400 shadow-md" : "text-espresso-800 hover:bg-cream-100"
+          }`}
+        >
+          <i className="fa-solid fa-layer-group" />
+          <span>إدارة الأقسام ({categories.length})</span>
         </button>
 
         <button
@@ -246,7 +264,10 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
       )}
 
       {/* TAB 1: Bouquets Manager */}
-      {activeTab === "bouquets" && <UploadBouquetForm initialProducts={initialProducts} />}
+      {activeTab === "bouquets" && <UploadBouquetForm categories={categories} initialProducts={initialProducts} />}
+      {activeTab === "categories" && (
+        <CategoriesManager onCategoriesChange={setCategories} initialCategories={categories} products={initialProducts} />
+      )}
 
       {/* TAB 2: Active Sessions Manager */}
       {activeTab === "sessions" && (

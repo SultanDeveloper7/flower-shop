@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CATEGORIES, CartItem, Product } from "@/constants/catalog";
+import { CartItem, Category, Product } from "@/constants/catalog";
 import TopBar from "./TopBar";
 import Header from "./Header";
 import HeroSection from "./HeroSection";
@@ -13,13 +13,14 @@ import CartDrawer from "./CartDrawer";
 
 interface Props {
   initialProducts: Product[];
+  categories: Category[];
   session: { id: number; name: string; role: "CUSTOMER" | "STAFF" | "ADMIN" } | null;
   userPoints: number;
 }
 
 const CART_STORAGE_KEY = "zahrat_lina_cart_v1";
 
-export default function StorefrontClient({ initialProducts, session, userPoints }: Props) {
+export default function StorefrontClient({ initialProducts, categories, session, userPoints }: Props) {
   const [activeCategoryId, setActiveCategoryId] = useState<number | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"default" | "price-asc" | "price-desc">("default");
@@ -133,7 +134,7 @@ export default function StorefrontClient({ initialProducts, session, userPoints 
       return (b.featured ? 1 : 0) - (a.featured ? 1 : 0);
     });
 
-  const activeCategoryObj = activeCategoryId === "all" ? null : CATEGORIES.find((c) => c.id === activeCategoryId);
+  const activeCategoryObj = activeCategoryId === "all" ? null : categories.find((c) => c.id === activeCategoryId);
 
   return (
     <>
@@ -170,7 +171,7 @@ export default function StorefrontClient({ initialProducts, session, userPoints 
             >
               الكل ({initialProducts.length})
             </button>
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategoryId(cat.id)}
