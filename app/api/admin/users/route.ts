@@ -25,17 +25,39 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "غير مصرح لك" }, { status: 403 });
   }
 
-  const { userId, isBlocked, role } = await req.json();
+  const { userId, isBlocked, role, pointsDelta } = await req.json();
 
   if (!userId) {
     return NextResponse.json({ error: "معرف المستخدم مطلوب" }, { status: 400 });
   }
 
-  // Prevent admin from accidentally blocking their own account
+  // 1. Handle Manual Points Addition / Deduction
+  if (typeof pointsDelta === "number" && !isNaN(pointsDelta) && pointsDelta !== 0) {
+    await pool.query(
+      `UPDATE users 
+       SET points_balance = GREATEST(0, points_balance + ?) 
+       WHERE id = ?`,
+      [pointsDelta, userId],
+    );
+
+    const [updatedRows] = await pool.query<RowDataPacket[]>("SELECT points_balance FROM users WHERE id = ?", [userId]);
+
+    const newBalance = updatedRows[0]?.points_balance ?? 0;
+    return NextResponse.json({
+      message:
+        pointsDelta > 0
+          ? `تمت إضافة +${pointsDelta} نقطة بنجاح (الرصيد الجديد: ${newBalance} نقطة)`
+          : `تم خصم ${Math.abs(pointsDelta)} نقطة بنجاح (الرصيد الجديد: ${newBalance} نقطة)`,
+      newBalance,
+    });
+  }
+
+  // 2. Prevent admin from accidentally blocking their own account
   if (Number(userId) === session.id && isBlocked === true) {
     return NextResponse.json({ error: "لا يمكنك حظر حسابك الشخصي كمدير للنظام!" }, { status: 400 });
   }
 
+  // 3. Handle Block / Unblock
   if (typeof isBlocked === "boolean") {
     await pool.query("UPDATE users SET is_blocked = ? WHERE id = ?", [isBlocked, userId]);
 
@@ -58,6 +80,7 @@ export async function PATCH(req: Request) {
     }
   }
 
+  // 4. Handle Role Change
   if (role && ["CUSTOMER", "STAFF", "ADMIN"].includes(role)) {
     if (Number(userId) === session.id && role !== "ADMIN") {
       return NextResponse.json({ error: "لا يمكنك إلغاء صلاحية الآدمن عن حسابك الحالي" }, { status: 400 });

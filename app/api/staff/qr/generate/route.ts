@@ -21,9 +21,18 @@ export async function POST(req: Request) {
      VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))`,
     [tokenId, points, session.id],
   );
+  // Inside src/app/api/staff/qr/generate/route.ts
+  const host = req.headers.get("host") || "localhost:3000";
+  const protocol = req.headers.get("x-forwarded-proto") || "http";
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes("localhost")
+      ? process.env.NEXT_PUBLIC_APP_URL
+      : `${protocol}://${host}`;
+
+  const claimUrl = `${baseUrl}/claim/${tokenId}`;
 
   // The URL the customer's camera will open when scanning
-  const claimUrl = `${process.env.NEXT_PUBLIC_APP_URL}/claim/${tokenId}`;
+  // const claimUrl = `${process.env.NEXT_PUBLIC_APP_URL}/claim/${tokenId}`;
   const qrDataUrl = await QRCode.toDataURL(claimUrl, { width: 300 });
 
   return NextResponse.json({ tokenId, qrDataUrl, claimUrl, points });

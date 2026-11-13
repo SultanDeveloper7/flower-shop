@@ -17,6 +17,7 @@ export interface Product {
   tags: string[];
   featured?: boolean;
   pointsPrice?: number | null;
+  isActive?: boolean;
 }
 
 export interface CartItem {

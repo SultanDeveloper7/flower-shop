@@ -25,7 +25,6 @@ interface UserRecord {
   created_at: string;
 }
 
-// Helper to parse User-Agent into friendly Arabic device description
 function formatDeviceAgent(ua?: string) {
   if (!ua) return { label: "جهاز غير معروف", icon: "fa-solid fa-laptop" };
   const lower = ua.toLowerCase();
@@ -62,6 +61,12 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Points Adjustment Modal State
+  const [pointsModalUser, setPointsModalUser] = useState<UserRecord | null>(null);
+  const [pointsOperation, setPointsOperation] = useState<"ADD" | "DEDUCT">("ADD");
+  const [pointsAmount, setPointsAmount] = useState<number>(50);
+  const [savingPoints, setSavingPoints] = useState(false);
 
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -138,10 +143,56 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
     }
   };
 
+  // Open Points Modal for a specific user
+  const openPointsModal = (user: UserRecord) => {
+    setPointsModalUser(user);
+    setPointsOperation("ADD");
+    setPointsAmount(50);
+  };
+
+  // Submit Manual Points Adjustment
+  const handleConfirmPointsAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pointsModalUser || pointsAmount <= 0) return;
+
+    setSavingPoints(true);
+    const delta = pointsOperation === "ADD" ? Number(pointsAmount) : -Number(pointsAmount);
+
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: pointsModalUser.id,
+          pointsDelta: delta,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast(data.message);
+        setPointsModalUser(null);
+        fetchUsers();
+      } else {
+        alert(data.error || "تعذر تحديث النقاط");
+      }
+    } finally {
+      setSavingPoints(false);
+    }
+  };
+
   const filteredUsers = users.filter((u) => {
     const q = userSearch.trim().toLowerCase();
     return !q || u.name.toLowerCase().includes(q) || u.phone_or_email.toLowerCase().includes(q);
   });
+
+  // Calculate preview balance inside modal
+  const previewBalance = pointsModalUser
+    ? Math.max(
+        0,
+        Number(pointsModalUser.points_balance) + (pointsOperation === "ADD" ? Number(pointsAmount || 0) : -Number(pointsAmount || 0)),
+      )
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -283,17 +334,17 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
         </div>
       )}
 
-      {/* TAB 3: Users & Block Management */}
+      {/* TAB 3: Users, Points Adjustment & Block Management */}
       {activeTab === "users" && (
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-cream-300 shadow-luxury space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-cream-200 pb-4">
             <div>
               <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900 flex items-center gap-2">
                 <i className="fa-solid fa-user-lock text-rosewarm-600" />
-                <span>إدارة الحسابات وحظر المستخدمين ({users.length})</span>
+                <span>إدارة الحسابات، النقاط، وحظر المستخدمين ({users.length})</span>
               </h2>
               <p className="text-xs text-espresso-800/70 mt-1">
-                عند حظر أي مستخدم، يتم منعه من تسجيل الدخول وطرده فوراً من جميع الأجهزة المتصلة
+                يمكنك إضافة أو خصم نقاط الولاء لأي عميل يدوياً، أو تغيير صلاحيته، أو حظره من الدخول
               </p>
             </div>
 
@@ -318,7 +369,7 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
                   <tr className="border-b border-cream-200 text-espresso-800/70">
                     <th className="py-3 px-3">المستخدم</th>
                     <th className="py-3 px-3">الجوال / البريد</th>
-                    <th className="py-3 px-3">رصيد النقاط</th>
+                    <th className="py-3 px-3">رصيد النقاط والتحكم</th>
                     <th className="py-3 px-3">الصلاحية</th>
                     <th className="py-3 px-3">الحالة</th>
                     <th className="py-3 px-3 text-left">إجراء الحظر</th>
@@ -333,7 +384,20 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
                         <td className="py-3.5 px-3 text-espresso-800" dir="ltr">
                           {u.phone_or_email}
                         </td>
-                        <td className="py-3.5 px-3 font-extrabold text-rosewarm-600">{u.points_balance} نقطة</td>
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-rosewarm-600 min-w-[65px]">{u.points_balance} نقطة</span>
+                            <button
+                              type="button"
+                              onClick={() => openPointsModal(u)}
+                              className="bg-gold-100 hover:bg-gold-400 text-espresso-900 border border-gold-400/70 text-[11px] font-bold px-2.5 py-1 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                              title="إضافة أو خصم نقاط يدوياً"
+                            >
+                              <i className="fa-solid fa-sliders text-rosewarm-600 text-[10px]" />
+                              <span>تعديل النقاط</span>
+                            </button>
+                          </div>
+                        </td>
                         <td className="py-3.5 px-3">
                           <select
                             value={u.role}
@@ -374,6 +438,145 @@ export default function AdminDashboardTabs({ initialProducts }: { initialProduct
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Manual Points Adjustment Modal */}
+      {pointsModalUser && (
+        <div
+          onClick={() => setPointsModalUser(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-espresso-900/60 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-cream-50 border-2 border-gold-400 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl"
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-espresso-900 text-cream-50 flex items-center justify-between border-b border-gold-500/40">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gold-500 text-espresso-900 flex items-center justify-center font-bold">
+                  <i className="fa-solid fa-coins" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold">تعديل رصيد نقاط العميل</h3>
+                  <p className="text-[11px] text-gold-400">{pointsModalUser.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPointsModalUser(null)}
+                className="w-8 h-8 rounded-full bg-espresso-800 hover:bg-rosewarm-500 text-white flex items-center justify-center cursor-pointer"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleConfirmPointsAdjustment} className="p-6 space-y-5">
+              {/* Operation Type Switcher: Add vs Deduct */}
+              <div className="grid grid-cols-2 gap-2 p-1.5 bg-cream-200/70 rounded-2xl border border-cream-300">
+                <button
+                  type="button"
+                  onClick={() => setPointsOperation("ADD")}
+                  className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    pointsOperation === "ADD" ? "bg-emerald-600 text-white shadow-sm" : "text-espresso-800 hover:text-espresso-900"
+                  }`}
+                >
+                  <i className="fa-solid fa-circle-plus" />
+                  <span>إضافة نقاط (+)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPointsOperation("DEDUCT")}
+                  className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    pointsOperation === "DEDUCT" ? "bg-rose-600 text-white shadow-sm" : "text-espresso-800 hover:text-espresso-900"
+                  }`}
+                >
+                  <i className="fa-solid fa-circle-minus" />
+                  <span>خصم نقاط (-)</span>
+                </button>
+              </div>
+
+              {/* Quick Preset Pills */}
+              <div>
+                <span className="block text-xs font-bold text-espresso-800/80 mb-2">اختيار سريع:</span>
+                <div className="flex flex-wrap gap-2">
+                  {[10, 25, 50, 100, 250, 500].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setPointsAmount(preset)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition cursor-pointer ${
+                        pointsAmount === preset
+                          ? "bg-espresso-900 text-gold-400 border-espresso-900"
+                          : "bg-white hover:bg-cream-200 text-espresso-900 border-cream-300"
+                      }`}
+                    >
+                      {pointsOperation === "ADD" ? `+${preset}` : `-${preset}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Points Input */}
+              <div>
+                <label className="block text-xs font-bold text-espresso-900 mb-1.5">
+                  عدد النقاط المراد {pointsOperation === "ADD" ? "إضافتها" : "خصمها"}:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  required
+                  value={pointsAmount}
+                  onChange={(e) => setPointsAmount(Math.max(0, Number(e.target.value)))}
+                  className="w-full rounded-2xl bg-white border border-cream-300 px-4 py-3 text-center text-lg font-extrabold text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Live Balance Preview Box */}
+              <div className="bg-cream-200/60 border border-cream-300 rounded-2xl p-4 flex items-center justify-between text-xs sm:text-sm">
+                <div>
+                  <span className="text-espresso-800/70 block">الرصيد الحالي:</span>
+                  <strong className="text-base text-espresso-900">{pointsModalUser.points_balance} نقطة</strong>
+                </div>
+
+                <i className="fa-solid fa-arrow-left text-gold-600 text-base" />
+
+                <div className="text-left">
+                  <span className="text-espresso-800/70 block">الرصيد بعد التعديل:</span>
+                  <strong className={`text-lg font-extrabold ${pointsOperation === "ADD" ? "text-emerald-700" : "text-rose-600"}`}>
+                    {previewBalance} نقطة
+                  </strong>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPointsModalUser(null)}
+                  className="px-5 py-3 rounded-full text-xs font-bold text-espresso-800 hover:bg-cream-200 transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPoints || pointsAmount <= 0}
+                  className={`flex-1 py-3 px-6 rounded-full text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer disabled:opacity-50 ${
+                    pointsOperation === "ADD" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
+                  }`}
+                >
+                  {savingPoints
+                    ? "جاري الحفظ..."
+                    : pointsOperation === "ADD"
+                      ? `تأكيد إضافة +${pointsAmount} نقطة`
+                      : `تأكيد خصم -${pointsAmount} نقطة`}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

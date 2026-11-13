@@ -33,6 +33,7 @@ export default async function AdminBouquetsPage() {
       : ["ورد طبيعي"],
     featured: Boolean(r.is_featured),
     pointsPrice: r.points_price,
+    isActive: r.is_active !== undefined ? Boolean(r.is_active) : true,
   }));
 
   return (

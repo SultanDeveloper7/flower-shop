@@ -11,8 +11,9 @@ interface Props {
 export default function UploadBouquetForm({ initialProducts }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Form State
+  // 1. Add New Bouquet Form State
   const [categoryId, setCategoryId] = useState<number>(1);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -21,17 +22,58 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
   const [tags, setTags] = useState("");
   const [isFeatured, setIsFeatured] = useState(true);
 
-  // Image Upload / URL State
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [externalUrl, setExternalUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  // Filter & Feedback State
+  // 2. Edit Bouquet Modal State
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editCategoryId, setEditCategoryId] = useState<number>(1);
+  const [editTitle, setEditTitle] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editPointsPrice, setEditPointsPrice] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editIsFeatured, setEditIsFeatured] = useState(true);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImageUrl, setEditImageUrl] = useState("");
+  const [editPreviewUrl, setEditPreviewUrl] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // 3. Filter & Feedback State
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
+  const handleToggleActive = async (product: Product) => {
+    const nextState = !(product.isActive ?? true);
+    setTogglingId(product.id);
+    setStatus(null);
+
+    try {
+      const res = await fetch("/api/admin/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: product.id, isActive: nextState }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setStatus({ type: "success", text: data.message });
+        router.refresh();
+      } else {
+        setStatus({ type: "error", text: data.error || "تعذر تغيير الحالة" });
+      }
+    } catch {
+      setStatus({ type: "error", text: "حدث خطأ في الشبكة أثناء تحديث الحالة" });
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  // --- Handlers for Add Form ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -118,6 +160,85 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
     }
   };
 
+  // --- Handlers for Edit Modal ---
+  const openEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setEditCategoryId(product.categoryId);
+    setEditTitle(product.title);
+    setEditPrice(String(product.price));
+    setEditPointsPrice(product.pointsPrice ? String(product.pointsPrice) : "");
+    setEditDescription(product.description || "");
+    setEditTags(product.tags.join(", "));
+    setEditIsFeatured(Boolean(product.featured));
+    setEditImageFile(null);
+    setEditImageUrl(product.image);
+    setEditPreviewUrl(product.image);
+  };
+
+  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditImageFile(file);
+      setEditPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleEditUrlChange = (url: string) => {
+    setEditImageUrl(url);
+    if (url.trim()) {
+      setEditImageFile(null);
+      if (editFileInputRef.current) editFileInputRef.current.value = "";
+      setEditPreviewUrl(url.trim());
+    }
+  };
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    setSavingEdit(true);
+    setStatus(null);
+
+    const formData = new FormData();
+    formData.append("id", String(editingProduct.id));
+    formData.append("category_id", String(editCategoryId));
+    formData.append("title", editTitle);
+    formData.append("price", editPrice);
+    if (editPointsPrice.trim()) {
+      formData.append("points_price", editPointsPrice.trim());
+    }
+    formData.append("description", editDescription);
+    formData.append("tags", editTags || "ورد طبيعي");
+    formData.append("is_featured", String(editIsFeatured));
+
+    if (editImageFile) {
+      formData.append("image", editImageFile);
+    } else {
+      formData.append("image_url", editImageUrl);
+    }
+
+    try {
+      const res = await fetch("/api/admin/products", {
+        method: "PUT",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "تعذر حفظ التعديلات");
+      } else {
+        setStatus({ type: "success", text: data.message });
+        setEditingProduct(null);
+        router.refresh();
+      }
+    } catch {
+      alert("تعذر الاتصال بالخادم أثناء التحديث");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // --- Handler for Delete ---
   const handleDeleteProduct = async (id: number, productTitle: string) => {
     if (!confirm(`هل أنت متأكد من حذف "${productTitle}" من المتجر؟`)) return;
 
@@ -166,7 +287,7 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
         </div>
       )}
 
-      {/* Top Section: Add New Product & Image to Any of the 10 Categories */}
+      {/* Top Section: Add New Product */}
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-cream-300 shadow-luxury space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cream-200 pb-4">
           <h2 className="font-serif font-bold text-xl sm:text-2xl text-espresso-900 flex items-center gap-2.5">
@@ -232,7 +353,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
           {/* Left Column: Category & Product Details */}
           <div className="md:col-span-7 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Select Category (1 to 10) */}
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-espresso-900 mb-1.5">
                   2. اختر القسم المطلوب (من الأقسام العشرة): <span className="text-rose-600">*</span>
@@ -251,7 +371,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
                 </select>
               </div>
 
-              {/* Product Title */}
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-espresso-900 mb-1.5">
                   3. اسم الباقة أو المنتج: <span className="text-rose-600">*</span>
@@ -266,7 +385,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
                 />
               </div>
 
-              {/* Price (SAR) */}
               <div>
                 <label className="block text-xs font-bold text-espresso-900 mb-1.5">
                   4. السعر (بالريال السعودي): <span className="text-rose-600">*</span>
@@ -283,7 +401,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
                 />
               </div>
 
-              {/* Points Price (Optional Loyalty Redemption) */}
               <div>
                 <label className="block text-xs font-bold text-espresso-900 mb-1.5">نقاط الاستبدال المجاني (اختياري):</label>
                 <input
@@ -297,7 +414,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
               </div>
             </div>
 
-            {/* Description */}
             <div>
               <label className="block text-xs font-bold text-espresso-900 mb-1.5">5. وصف الباقة ومحتوياتها:</label>
               <textarea
@@ -309,7 +425,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
               />
             </div>
 
-            {/* Tags & Featured Toggle */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
               <div>
                 <label className="block text-xs font-bold text-espresso-900 mb-1.5">وسوم سريعة (مفصولة بفاصلة):</label>
@@ -333,7 +448,6 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
               </label>
             </div>
 
-            {/* Submit Button */}
             <div className="pt-2">
               <button
                 type="submit"
@@ -357,15 +471,17 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
         </form>
       </div>
 
-      {/* Bottom Section: Manage Existing Products in MySQL */}
+      {/* Bottom Section: Manage Existing Products (Edit & Delete) */}
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-cream-300 shadow-luxury space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cream-200 pb-4">
           <div>
             <h3 className="font-serif font-bold text-lg sm:text-xl text-espresso-900 flex items-center gap-2">
               <i className="fa-solid fa-images text-gold-600" />
-              <span>إدارة الصور والمنتجات الحالية ({initialProducts.length})</span>
+              <span>إدارة وتعديل الباقات الحالية ({initialProducts.length})</span>
             </h3>
-            <p className="text-xs text-espresso-800/70 mt-0.5">يمكنك فلترة القسم أو حذف أي منتج بضغطة زر</p>
+            <p className="text-xs text-espresso-800/70 mt-0.5">
+              اضغط على أيقونة القلم لتعديل السعر أو الاسم أو الصورة أو القسم، أو سلة المهملات للحذف
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -390,48 +506,270 @@ export default function UploadBouquetForm({ initialProducts }: Props) {
             <p className="text-xs sm:text-sm text-espresso-800/70 font-semibold">لا توجد منتجات مضافة في هذا القسم حالياً.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[420px] overflow-y-auto p-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[480px] overflow-y-auto p-1">
             {filteredProducts.map((item) => {
               const cat = CATEGORIES.find((c) => c.id === item.categoryId);
+              const isItemActive = item.isActive ?? true;
+
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 p-3 rounded-2xl border border-cream-300 bg-cream-50 hover:bg-white transition-colors shadow-2xs"
+                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs ${
+                    isItemActive ? "border-cream-300 bg-cream-50 hover:bg-white" : "border-stone-300 bg-stone-100/80 opacity-75"
+                  }`}
                 >
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-16 h-16 rounded-xl object-cover shrink-0 border border-cream-300 bg-cream-200"
-                  />
+                  <div className="relative shrink-0">
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      className={`w-16 h-16 rounded-xl object-cover border border-cream-300 bg-cream-200 ${
+                        !isItemActive ? "grayscale" : ""
+                      }`}
+                    />
+                    {!isItemActive && (
+                      <span className="absolute inset-0 bg-espresso-900/60 rounded-xl flex items-center justify-center text-[10px] font-bold text-white">
+                        مخفي
+                      </span>
+                    )}
+                  </div>
+
                   <div className="flex-1 min-w-0">
-                    <span className="text-[10px] font-bold text-rosewarm-600 block truncate">
-                      {cat ? `القسم ${cat.id}: ${cat.name}` : ""}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-rosewarm-600 truncate">{cat ? `القسم ${cat.id}: ${cat.name}` : ""}</span>
+                    </div>
+
                     <h4 className="font-bold text-xs sm:text-sm text-espresso-900 truncate mt-0.5">{item.title}</h4>
-                    <div className="flex items-center gap-2 mt-1">
+
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
                       <span className="text-xs font-extrabold text-espresso-900">{item.price} ر.س</span>
-                      {item.pointsPrice && (
-                        <span className="text-[10px] bg-gold-100 text-espresso-900 border border-gold-400/50 px-2 py-0.5 rounded-full font-bold">
-                          {item.pointsPrice} نقطة
-                        </span>
-                      )}
+
+                      {/* In-Stock / Out-of-Stock Quick Toggle Switch */}
+                      <button
+                        type="button"
+                        disabled={togglingId === item.id}
+                        onClick={() => handleToggleActive(item)}
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
+                          isItemActive
+                            ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300"
+                            : "bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300"
+                        }`}
+                        title={isItemActive ? "الباقة معروضة في المتجر — اضغط لإخفائها مؤقتاً" : "الباقة مخفية من المتجر — اضغط لإظهارها"}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isItemActive ? "bg-emerald-600" : "bg-stone-500"}`} />
+                        <span>{togglingId === item.id ? "..." : isItemActive ? "متوفر ✓" : "نفدت (مخفي)"}</span>
+                      </button>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    disabled={deletingId === item.id}
-                    onClick={() => handleDeleteProduct(item.id, item.title)}
-                    className="w-9 h-9 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
-                    title="حذف المنتج"
-                  >
-                    <i className={`fa-solid ${deletingId === item.id ? "fa-spinner animate-spin" : "fa-trash-can"} text-xs`} />
-                  </button>
+
+                  {/* Action Buttons: Edit & Delete */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(item)}
+                      className="w-8 h-8 rounded-xl bg-gold-100 hover:bg-gold-500 text-espresso-900 flex items-center justify-center transition-colors cursor-pointer"
+                      title="تعديل بيانات وصورة الباقة"
+                    >
+                      <i className="fa-solid fa-pen-to-square text-xs" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={deletingId === item.id}
+                      onClick={() => handleDeleteProduct(item.id, item.title)}
+                      className="w-8 h-8 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
+                      title="حذف المنتج نهائياً"
+                    >
+                      <i className={`fa-solid ${deletingId === item.id ? "fa-spinner animate-spin" : "fa-trash-can"} text-xs`} />
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* ==========================================
+          EDIT BOUQUET MODAL
+          ========================================== */}
+      {editingProduct && (
+        <div
+          onClick={() => setEditingProduct(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-espresso-900/70 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-cream-50 border-2 border-gold-400 rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-espresso-900 text-cream-50 flex items-center justify-between border-b border-gold-500/40">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gold-500 text-espresso-900 flex items-center justify-center font-bold">
+                  <i className="fa-solid fa-pen-to-square" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg sm:text-xl font-bold">تعديل بيانات الباقة</h3>
+                  <p className="text-[11px] text-gold-400 truncate max-w-xs">{editingProduct.title}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="w-8 h-8 rounded-full bg-espresso-800 hover:bg-rosewarm-500 text-white flex items-center justify-center cursor-pointer"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleUpdateSubmit} className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+              {/* Right Column: Image Preview & Replacement */}
+              <div className="md:col-span-5 space-y-3">
+                <label className="block text-xs font-bold text-espresso-900">صورة الباقة الحالية (اضغط لتغييرها):</label>
+
+                <div
+                  onClick={() => editFileInputRef.current?.click()}
+                  className="relative group cursor-pointer aspect-square rounded-2xl border-2 border-dashed border-gold-400 hover:border-rosewarm-500 bg-cream-100 overflow-hidden"
+                >
+                  {editPreviewUrl && <img src={editPreviewUrl} alt="معاينة التعديل" className="w-full h-full object-cover" />}
+                  <div className="absolute inset-0 bg-espresso-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="bg-white text-espresso-900 text-xs font-bold px-3.5 py-2 rounded-full shadow">
+                      <i className="fa-solid fa-camera ml-1 text-rosewarm-600" />
+                      رفع صورة جديدة
+                    </span>
+                  </div>
+                </div>
+
+                <input ref={editFileInputRef} type="file" accept="image/*" onChange={handleEditFileChange} className="hidden" />
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-espresso-800/80 mb-1">أو رابط الصورة المباشر:</label>
+                  <input
+                    type="text"
+                    value={editImageUrl}
+                    onChange={(e) => handleEditUrlChange(e.target.value)}
+                    dir="ltr"
+                    className="w-full rounded-xl bg-white border border-cream-300 px-3 py-2 text-xs text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Left Column: Editable Fields */}
+              <div className="md:col-span-7 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-espresso-900 mb-1">القسم:</label>
+                  <select
+                    value={editCategoryId}
+                    onChange={(e) => setEditCategoryId(Number(e.target.value))}
+                    className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-espresso-900 focus:border-rosewarm-500 focus:outline-none cursor-pointer"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        القسم {cat.id}: {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-espresso-900 mb-1">اسم الباقة:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-espresso-900 mb-1">السعر (ر.س):</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      required
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(e.target.value)}
+                      className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-rosewarm-600 focus:border-rosewarm-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-espresso-900 mb-1">نقاط الاستبدال المجاني (اختياري):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editPointsPrice}
+                      onChange={(e) => setEditPointsPrice(e.target.value)}
+                      placeholder="اتركه فارغاً لإلغائه"
+                      className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-xs sm:text-sm text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-espresso-900 mb-1">الوصف:</label>
+                  <textarea
+                    rows={2}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-cream-300 p-3 text-xs sm:text-sm text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-espresso-900 mb-1">الوسوم (مفصولة بفاصلة):</label>
+                  <input
+                    type="text"
+                    value={editTags}
+                    onChange={(e) => setEditTags(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2 text-xs text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2.5 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={editIsFeatured}
+                    onChange={(e) => setEditIsFeatured(e.target.checked)}
+                    className="w-4 h-4 accent-rosewarm-600 rounded"
+                  />
+                  <span className="text-xs font-bold text-espresso-900">تمييز الباقة بعلامة (⭐ مميز) في المقدمة</span>
+                </label>
+
+                <div className="pt-3 flex items-center gap-3 border-t border-cream-200">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProduct(null)}
+                    className="px-5 py-2.5 rounded-full text-xs font-bold text-espresso-800 hover:bg-cream-200 transition cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="flex-1 bg-rosewarm-500 hover:bg-rosewarm-600 disabled:opacity-50 text-white font-bold py-3 px-6 rounded-full shadow-md transition flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer"
+                  >
+                    {savingEdit ? (
+                      <>
+                        <i className="fa-solid fa-spinner animate-spin" />
+                        <span>جاري حفظ التعديلات...</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-floppy-disk" />
+                        <span>حفظ التعديلات الآن</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

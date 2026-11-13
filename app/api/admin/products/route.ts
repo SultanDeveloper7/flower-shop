@@ -86,3 +86,98 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "تعذر حذف المنتج" }, { status: 500 });
   }
 }
+
+export async function PUT(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "ADMIN") {
+      return NextResponse.json({ error: "غير مصرح لك بهذا الإجراء (للإدارة فقط)" }, { status: 403 });
+    }
+
+    const formData = await req.formData();
+    const id = Number(formData.get("id"));
+    const categoryId = parseInt((formData.get("category_id") as string) || "1", 10);
+    const title = (formData.get("title") as string)?.trim();
+    const description = (formData.get("description") as string)?.trim() || "";
+    const price = parseFloat(formData.get("price") as string);
+    const pointsPriceRaw = formData.get("points_price") as string;
+    const pointsPrice = pointsPriceRaw ? parseInt(pointsPriceRaw, 10) : null;
+    const tags = (formData.get("tags") as string)?.trim() || "ورد طبيعي, تنسيق فاخر";
+    const isFeatured = formData.get("is_featured") === "true";
+
+    const file = formData.get("image") as File | null;
+    const existingOrExternalUrl = (formData.get("image_url") as string)?.trim();
+
+    if (!id || !title || isNaN(price)) {
+      return NextResponse.json({ error: "يرجى التأكد من اسم الباقة والسعر" }, { status: 400 });
+    }
+
+    let finalImageUrl = existingOrExternalUrl || "";
+
+    // If the admin selected a new image file from device, save it to public/uploads
+    if (file && file.size > 0) {
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+
+      const ext = path.extname(file.name) || ".jpg";
+      const fileName = `${uuidv4()}${ext}`;
+      const uploadDir = path.join(process.cwd(), "public", "uploads");
+
+      await mkdir(uploadDir, { recursive: true });
+      await writeFile(path.join(uploadDir, fileName), buffer);
+
+      finalImageUrl = `/uploads/${fileName}`;
+    }
+
+    if (!finalImageUrl) {
+      return NextResponse.json({ error: "صورة الباقة مطلوبة" }, { status: 400 });
+    }
+
+    await pool.query(
+      `UPDATE products 
+       SET category_id = ?, 
+           title = ?, 
+           description = ?, 
+           price = ?, 
+           image_url = ?, 
+           points_price = ?, 
+           tags = ?, 
+           is_featured = ?
+       WHERE id = ?`,
+      [categoryId, title, description, price, finalImageUrl, pointsPrice, tags, isFeatured, id],
+    );
+
+    return NextResponse.json({
+      message: `تم تحديث بيانات "${title}" بنجاح!`,
+      imageUrl: finalImageUrl,
+    });
+  } catch (error) {
+    console.error("Product update error:", error);
+    return NextResponse.json({ error: "حدث خطأ أثناء تحديث الباقة" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "ADMIN") {
+      return NextResponse.json({ error: "غير مصرح لك بهذا الإجراء (للإدارة فقط)" }, { status: 403 });
+    }
+
+    const { id, isActive } = await req.json();
+
+    if (!id || typeof isActive !== "boolean") {
+      return NextResponse.json({ error: "بيانات الحالة غير صالحة" }, { status: 400 });
+    }
+
+    await pool.query("UPDATE products SET is_active = ? WHERE id = ?", [isActive, id]);
+
+    return NextResponse.json({
+      message: isActive ? "تم إظهار الباقة في المتجر (متوفرة الآن) 🌸" : "تم إخفاء الباقة مؤقتاً من المتجر (نفدت الكمية)",
+      isActive,
+    });
+  } catch (error) {
+    console.error("Product toggle active error:", error);
+    return NextResponse.json({ error: "حدث خطأ أثناء تغيير حالة توفر الباقة" }, { status: 500 });
+  }
+}

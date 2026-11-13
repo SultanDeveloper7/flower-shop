@@ -43,6 +43,26 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
   const [voucherError, setVoucherError] = useState("");
   const [voucherSuccess, setVoucherSuccess] = useState("");
   const [loadingVoucher, setLoadingVoucher] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyClaimLink = (url: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = url;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+    }
+
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
 
   // Calculate 10 points per 100 SAR (or 1 pt per 10 SAR) automatically
   const handleInvoiceChange = (val: string) => {
@@ -218,36 +238,80 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
           </form>
 
           {/* Generated QR Display Card */}
+          {/* Generated QR Display Card */}
           {qrData && (
             <div className="mt-6 bg-gradient-to-b from-espresso-900 to-espresso-800 text-cream-50 rounded-3xl p-6 sm:p-8 border-2 border-gold-500 shadow-2xl text-center space-y-4 relative overflow-hidden">
               <div className="inline-flex items-center gap-2 bg-gold-500 text-espresso-900 text-xs font-extrabold px-4 py-1 rounded-full">
                 <i className="fa-solid fa-sparkles" />
-                <span>جاهز للمسح بكاميرا جوال العميل</span>
+                <span>جاهز للمسح أو إرسال الرابط للعميل</span>
               </div>
 
               <h3 className="font-serif text-3xl font-bold text-white">+{qrData.points} نقطة ولاء</h3>
 
               <div className="bg-white p-4 rounded-3xl inline-block mx-auto shadow-lg border-4 border-gold-400">
-                <img src={qrData.qrDataUrl} alt="Customer Loyalty QR Code" className="w-56 h-56 sm:w-64 sm:h-64 object-contain mx-auto" />
+                <img src={qrData.qrDataUrl} alt="Customer Loyalty QR Code" className="w-52 h-52 sm:w-60 sm:h-60 object-contain mx-auto" />
               </div>
 
-              <p className="text-xs text-cream-200 max-w-sm mx-auto leading-relaxed">
-                اطلب من العميل فتح كاميرا الجوال وتوجيهها نحو الكود لإضافة النقاط مباشرة إلى حسابه في <strong>زهرة لينا</strong>.
-              </p>
+              {/* Compact Copy Link Section (Alternative to Scanning QR) */}
+              <div className="max-w-md mx-auto bg-white/10 backdrop-blur-md border border-gold-400/40 rounded-2xl p-3.5 text-right space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-gold-400 font-bold px-1">
+                  <span>
+                    <i className="fa-solid fa-link ml-1" />
+                    رابط تحصيل النقاط المباشر (بدون مسح الكود):
+                  </span>
+                  {copiedLink && <span className="text-emerald-400">تم نسخ الرابط للحافظة ✓</span>}
+                </div>
 
-              <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={qrData.claimUrl}
+                    dir="ltr"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    className="flex-1 bg-espresso-900/90 border border-white/15 rounded-xl px-3 py-2 text-xs text-cream-100 font-mono truncate focus:outline-none select-all"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyClaimLink(qrData.claimUrl)}
+                    className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      copiedLink ? "bg-emerald-600 text-white" : "bg-gold-500 hover:bg-gold-400 text-espresso-900"
+                    }`}
+                  >
+                    <i className={`fa-solid ${copiedLink ? "fa-check" : "fa-copy"}`} />
+                    <span>{copiedLink ? "تم النسخ!" : "نسخ الرابط"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons: Print, Share via WhatsApp, or Close */}
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `شكراً لتسوقك من متجر زهرة لينا 🌸!\nاضغط على الرابط التالي لتحصيل (+${qrData.points} نقطة ولاء) في حسابك:\n${qrData.claimUrl}`,
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5"
+                >
+                  <i className="fa-brands fa-whatsapp text-sm" />
+                  <span>إرسال الرابط عبر واتساب</span>
+                </a>
+
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold px-4 py-2 rounded-full transition"
+                  className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold px-4 py-2 rounded-full transition cursor-pointer"
                 >
                   <i className="fa-solid fa-print ml-1.5 text-gold-400" />
                   طباعة مع الفاتورة
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setQrData(null)}
-                  className="bg-rosewarm-600/80 hover:bg-rosewarm-600 text-white text-xs font-bold px-4 py-2 rounded-full transition"
+                  className="bg-rosewarm-600/80 hover:bg-rosewarm-600 text-white text-xs font-bold px-4 py-2 rounded-full transition cursor-pointer"
                 >
                   إغلاق الكود
                 </button>
