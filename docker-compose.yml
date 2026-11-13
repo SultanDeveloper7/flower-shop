@@ -8,4 +8,6 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env.production
+      - C:/flower-shop-config/.env.production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
