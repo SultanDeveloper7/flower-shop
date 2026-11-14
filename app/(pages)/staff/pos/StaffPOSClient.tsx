@@ -1,17 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
 
-interface RecentToken {
-  id: string;
-  points_amount: number;
+export interface QRTokenRecord {
+  tokenId: string;
+  points: number;
+  claimUrl: string;
+  qrDataUrl?: string;
   status: "PENDING" | "CLAIMED" | "EXPIRED";
-  created_at: string;
-  claimed_by_name?: string | null;
+  createdAt: string;
+  expiresAt: string;
+  claimedByName?: string | null;
+  createdByStaffName?: string | null;
 }
 
-interface VoucherDetails {
+interface VerifiedVoucher {
   id: number;
   rewardCode: string;
   rewardType: "DISCOUNT" | "FREE_BOUQUET";
@@ -19,38 +22,102 @@ interface VoucherDetails {
   pointsSpent: number;
   status: "ACTIVE" | "USED";
   customerName: string;
-  customerContact: string;
+  customerPhone: string;
+  createdAt: string;
 }
 
-export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentToken[] }) {
-  const router = useRouter();
+// Calculate remaining seconds until expiresAt
+function getRemainingSeconds(expiresAt: string, nowMs: number): number {
+  const diff = Math.floor((new Date(expiresAt).getTime() - nowMs) / 1000);
+  return Math.max(0, diff);
+}
 
-  // QR Generator State
-  const [invoiceAmount, setInvoiceAmount] = useState<string>("");
+// Format seconds as MM:SS
+function formatCountdown(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+export default function StaffPOSClient({ initialTokens = [] }: { initialTokens?: QRTokenRecord[] }) {
+  // 1. QR Generation State
   const [points, setPoints] = useState<number>(25);
-  const [qrData, setQrData] = useState<{
-    tokenId: string;
-    qrDataUrl: string;
-    claimUrl: string;
-    points: number;
-  } | null>(null);
-  const [loadingQR, setLoadingQR] = useState(false);
-  const [qrError, setQrError] = useState("");
-
-  // Voucher Verification State
-  const [voucherInput, setVoucherInput] = useState("");
-  const [voucherResult, setVoucherResult] = useState<VoucherDetails | null>(null);
-  const [voucherError, setVoucherError] = useState("");
-  const [voucherSuccess, setVoucherSuccess] = useState("");
-  const [loadingVoucher, setLoadingVoucher] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [qrData, setQrData] = useState<QRTokenRecord | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const handleCopyClaimLink = (url: string) => {
+  // 2. Voucher Verification State ("التحقق من كود مكافأة أو خصم")
+  const [voucherCode, setVoucherCode] = useState("");
+  const [verifyingVoucher, setVerifyingVoucher] = useState(false);
+  const [redeemingVoucher, setRedeemingVoucher] = useState(false);
+  const [voucherResult, setVoucherResult] = useState<VerifiedVoucher | null>(null);
+  const [voucherFeedback, setVoucherFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // 3. QR History Table State
+  const [tokensHistory, setTokensHistory] = useState<QRTokenRecord[]>(initialTokens);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
+
+  // 1-second ticker for live 15-minute countdowns
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  const fetchHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch("/api/staff/qr/generate");
+      const data = await res.json();
+      if (res.ok && data.tokens) {
+        setTokensHistory(data.tokens);
+      }
+    } catch {
+      // Ignore background poll errors
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistory();
+    const poll = setInterval(fetchHistory, 30000);
+    return () => clearInterval(poll);
+  }, [fetchHistory]);
+
+  // 1-second interval to update countdown timers and flip expired PENDING codes to EXPIRED
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const current = Date.now();
+      setNowMs(current);
+
+      setTokensHistory((prev) =>
+        prev.map((item) => {
+          if (item.status === "PENDING" && new Date(item.expiresAt).getTime() <= current) {
+            return { ...item, status: "EXPIRED" };
+          }
+          return item;
+        }),
+      );
+
+      setQrData((prev) => {
+        if (prev && prev.status === "PENDING" && new Date(prev.expiresAt).getTime() <= current) {
+          return { ...prev, status: "EXPIRED" };
+        }
+        return prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const copyToClipboard = (text: string) => {
     if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(url);
+      navigator.clipboard.writeText(text);
     } else {
       const textArea = document.createElement("textarea");
-      textArea.value = url;
+      textArea.value = text;
       textArea.style.position = "fixed";
       textArea.style.opacity = "0";
       document.body.appendChild(textArea);
@@ -59,207 +126,247 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
       document.execCommand("copy");
       document.body.removeChild(textArea);
     }
+  };
 
+  const handleCopyClaimLink = (url: string) => {
+    copyToClipboard(url);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  // Calculate 10 points per 100 SAR (or 1 pt per 10 SAR) automatically
-  const handleInvoiceChange = (val: string) => {
-    setInvoiceAmount(val);
-    const num = parseFloat(val);
-    if (!isNaN(num) && num > 0) {
-      setPoints(Math.max(5, Math.round(num * 0.2))); // Example: 200 SAR -> 40 pts
-    }
+  const handleCopyRowLink = (tokenId: string, url: string) => {
+    copyToClipboard(url);
+    setCopiedRowId(tokenId);
+    setTimeout(() => setCopiedRowId(null), 2000);
   };
 
   const handleGenerateQR = async (e: React.FormEvent) => {
     e.preventDefault();
-    setQrError("");
-    setLoadingQR(true);
+    setLoading(true);
+    setError("");
 
     try {
       const res = await fetch("/api/staff/qr/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points: Number(points) }),
+        body: JSON.stringify({ points }),
       });
-
       const data = await res.json();
+
       if (!res.ok) {
-        setQrError(data.error || "تعذر توليد كود الـ QR");
+        setError(data.error || "تعذر إنشاء كود النقاط");
       } else {
         setQrData(data);
-        router.refresh();
+        fetchHistory();
       }
     } catch {
-      setQrError("تعذر الاتصال بالخادم");
+      setError("تعذر الاتصال بالخادم، يرجى المحاولة مرة أخرى");
     } finally {
-      setLoadingQR(false);
+      setLoading(false);
     }
   };
 
-  const handleVoucherAction = async (action: "CHECK" | "USE") => {
-    setVoucherError("");
-    setVoucherSuccess("");
-    setLoadingVoucher(true);
+  const handleShowCodeAgain = (item: QRTokenRecord) => {
+    setQrData(item);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // --- Voucher Check & Redeem Handlers ---
+  const handleCheckVoucher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanCode = voucherCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    setVerifyingVoucher(true);
+    setVoucherFeedback(null);
+    setVoucherResult(null);
+
+    try {
+      const res = await fetch(`/api/staff/voucher/verify?code=${encodeURIComponent(cleanCode)}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setVoucherFeedback({
+          type: "error",
+          text: data.error || "كود القسيمة غير صحيح أو غير موجود",
+        });
+      } else {
+        setVoucherResult(data.voucher);
+      }
+    } catch {
+      setVoucherFeedback({
+        type: "error",
+        text: "تعذر التحقق من الكود، تأكد من الاتصال بالخادم",
+      });
+    } finally {
+      setVerifyingVoucher(false);
+    }
+  };
+
+  const handleMarkVoucherUsed = async () => {
+    if (!voucherResult) return;
+
+    setRedeemingVoucher(true);
+    setVoucherFeedback(null);
 
     try {
       const res = await fetch("/api/staff/voucher/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rewardCode: voucherInput, action }),
+        body: JSON.stringify({ code: voucherResult.rewardCode }),
       });
-
       const data = await res.json();
+
       if (!res.ok) {
-        setVoucherError(data.error || "كود غير صالح");
-        if (action === "CHECK") setVoucherResult(null);
+        setVoucherFeedback({
+          type: "error",
+          text: data.error || "تعذر تفعيل القسيمة",
+        });
       } else {
-        setVoucherResult(data.voucher);
-        if (action === "USE") {
-          setVoucherSuccess("تم تأكيد استخدام الكود بنجاح وتطبيقه للعميل! 🎉");
-          router.refresh();
-        }
+        setVoucherResult({ ...voucherResult, status: "USED" });
+        setVoucherFeedback({
+          type: "success",
+          text: data.message || "تم تأكيد استخدام القسيمة وتطبيق المكافأة للعميل بنجاح ✓",
+        });
       }
     } catch {
-      setVoucherError("حدث خطأ في الشبكة");
+      setVoucherFeedback({
+        type: "error",
+        text: "حدث خطأ أثناء تأكيد استخدام القسيمة",
+      });
     } finally {
-      setLoadingVoucher(false);
+      setRedeemingVoucher(false);
     }
   };
 
+  const activeQrRemaining = qrData ? getRemainingSeconds(qrData.expiresAt, nowMs) : 0;
+  const isActiveQrExpired = qrData?.status === "EXPIRED" || (qrData?.status === "PENDING" && activeQrRemaining === 0);
+
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Right Column (7 Cols): Generate Loyalty QR Code */}
-        <div className="lg:col-span-7 bg-white rounded-3xl border border-cream-300 shadow-luxury p-6 sm:p-8 space-y-6">
-          <div className="flex items-center justify-between border-b border-cream-200 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-rosewarm-100 text-rosewarm-600 flex items-center justify-center text-xl">
-                <i className="fa-solid fa-qrcode" />
-              </div>
-              <div>
-                <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900">إصدار كود نقاط الولاء (QR)</h2>
-                <p className="text-xs text-espresso-800/70">يُمسح لمرة واحدة فقط بكاميرا جوال العميل وتُضاف النقاط فوراً لحسابه</p>
-              </div>
+      {/* Top Grid: 1. Generate QR Code (Right) + 2. Verify Reward Voucher (Left) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ============================================================
+            SECTION 1: Generate 15-Minute QR Code
+            ============================================================ */}
+        <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-3xl border border-cream-300 shadow-luxury space-y-6">
+          <div className="border-b border-cream-200 pb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900 flex items-center gap-2">
+                <i className="fa-solid fa-qrcode text-rosewarm-600" />
+                <span>إصدار كود نقاط ولاء للعميل</span>
+              </h2>
+              <p className="text-xs text-espresso-800/70 mt-1">اختر عدد النقاط ليتم إنشاء كود QR ورابط مباشر صالح لمدة 15 دقيقة</p>
             </div>
-            <span className="hidden sm:inline-block bg-gold-100 text-espresso-900 border border-gold-400/50 text-xs font-bold px-3 py-1 rounded-full">
-              صالح لمدة 15 دقيقة
+            <span className="text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1 rounded-full flex items-center gap-1.5">
+              <i className="fa-regular fa-clock" />
+              <span>صالح لـ 15 دقيقة</span>
             </span>
           </div>
 
-          {qrError && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-              <i className="fa-solid fa-circle-exclamation" />
-              <span>{qrError}</span>
-            </div>
+          {error && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm font-bold">{error}</div>
           )}
 
           <form onSubmit={handleGenerateQR} className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Optional Invoice Calculator */}
-              <div className="bg-cream-50 p-4 rounded-2xl border border-cream-300">
-                <label className="block text-xs font-bold text-espresso-900 mb-1.5">حاسبة سريعة: قيمة الفاتورة (ر.س)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={invoiceAmount}
-                    onChange={(e) => handleInvoiceChange(e.target.value)}
-                    placeholder="مثال: 250 ر.س"
-                    className="w-full rounded-xl bg-white border border-cream-300 px-3.5 py-2.5 text-sm font-bold text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
-                  />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-espresso-800/60 font-bold">ر.س</span>
-                </div>
-                <p className="text-[11px] text-espresso-800/60 mt-1.5">تُحتسب تلقائياً (20% من قيمة الفاتورة كنقاط) أو عدّلها يدوياً</p>
-              </div>
-
-              {/* Points to Award */}
-              <div className="bg-rosewarm-100/50 p-4 rounded-2xl border border-rosewarm-300/60">
-                <label className="block text-xs font-bold text-espresso-900 mb-1.5">
-                  عدد النقاط الممنوحة للعميل <span className="text-rose-600">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="1"
-                    max="2000"
-                    value={points}
-                    onChange={(e) => setPoints(Number(e.target.value))}
-                    required
-                    className="w-full rounded-xl bg-white border border-rosewarm-300 px-3.5 py-2.5 text-lg font-extrabold text-rosewarm-600 text-center focus:border-rosewarm-600 focus:outline-none"
-                  />
-                </div>
-                <p className="text-[11px] text-rosewarm-700 font-semibold mt-1.5 text-center">سيحصل العميل على +{points} نقطة في محفظته</p>
-              </div>
-            </div>
-
-            {/* Quick Preset Point Pills */}
             <div>
-              <span className="block text-xs font-bold text-espresso-800/80 mb-2">أو اختر نقاط سريعة حسب الباقة:</span>
-              <div className="flex flex-wrap gap-2">
-                {[15, 25, 50, 75, 100, 150].map((preset) => (
+              <label className="block text-xs font-bold text-espresso-900 mb-2">اختيار سريع للنقاط حسب الطلب:</label>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {[
+                  { pts: 15, desc: "باقة صغيرة" },
+                  { pts: 25, desc: "باقة متوسطة" },
+                  { pts: 50, desc: "باقة ملكية" },
+                  { pts: 100, desc: "بوكس هدايا" },
+                  { pts: 200, desc: "طلب مناسبة" },
+                ].map((preset) => (
                   <button
-                    key={preset}
+                    key={preset.pts}
                     type="button"
-                    onClick={() => {
-                      setPoints(preset);
-                      setInvoiceAmount("");
-                    }}
-                    className={`px-4 py-2 rounded-full text-xs font-bold border transition-all cursor-pointer ${
-                      points === preset
-                        ? "bg-espresso-900 text-gold-400 border-espresso-900 shadow-sm"
-                        : "bg-cream-100 hover:bg-cream-200 text-espresso-900 border-cream-300"
+                    onClick={() => setPoints(preset.pts)}
+                    className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
+                      points === preset.pts
+                        ? "bg-espresso-900 text-gold-400 border-espresso-900 shadow-md"
+                        : "bg-cream-50 hover:bg-rosewarm-100/50 text-espresso-900 border-cream-300"
                     }`}
                   >
-                    +{preset} نقطة
+                    <div className="text-sm sm:text-base font-extrabold">+{preset.pts} نقطة</div>
+                    <div className="text-[10px] opacity-75 mt-0.5">{preset.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loadingQR}
-              className="w-full bg-rosewarm-500 hover:bg-rosewarm-600 disabled:opacity-60 text-white font-bold py-3.5 px-6 rounded-full shadow-luxury hover:shadow-luxury-hover transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
-            >
-              {loadingQR ? (
-                <>
-                  <i className="fa-solid fa-spinner animate-spin" />
-                  <span>جاري توليد الكود...</span>
-                </>
-              ) : (
-                <>
-                  <i className="fa-solid fa-wand-magic-sparkles text-gold-100" />
-                  <span>توليد كود الـ QR للعميل الآن (+{points} نقطة)</span>
-                </>
-              )}
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+              <div className="sm:col-span-6">
+                <label className="block text-xs font-bold text-espresso-900 mb-1.5">أو أدخل عدد النقاط يدوياً:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="5000"
+                  required
+                  value={points}
+                  onChange={(e) => setPoints(Number(e.target.value))}
+                  className="w-full rounded-xl bg-cream-50 border border-cream-300 px-4 py-2.5 text-sm font-extrabold text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="sm:col-span-6">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-rosewarm-500 hover:bg-rosewarm-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+                >
+                  <i className="fa-solid fa-qrcode" />
+                  <span>{loading ? "جاري الإنشاء..." : "توليد كود النقاط الآن"}</span>
+                </button>
+              </div>
+            </div>
           </form>
 
-          {/* Generated QR Display Card */}
-          {/* Generated QR Display Card */}
+          {/* Active / Reopened QR Spotlight Card */}
           {qrData && (
-            <div className="mt-6 bg-gradient-to-b from-espresso-900 to-espresso-800 text-cream-50 rounded-3xl p-6 sm:p-8 border-2 border-gold-500 shadow-2xl text-center space-y-4 relative overflow-hidden">
-              <div className="inline-flex items-center gap-2 bg-gold-500 text-espresso-900 text-xs font-extrabold px-4 py-1 rounded-full">
-                <i className="fa-solid fa-sparkles" />
-                <span>جاهز للمسح أو إرسال الرابط للعميل</span>
+            <div className="mt-6 bg-gradient-to-b from-espresso-900 to-espresso-800 text-cream-50 rounded-3xl p-5 sm:p-7 border-2 border-gold-500 shadow-2xl text-center space-y-4 relative overflow-hidden">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {qrData.status === "CLAIMED" ? (
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-500 text-white text-xs font-extrabold px-4 py-1.5 rounded-full">
+                    <i className="fa-solid fa-circle-check" />
+                    <span>تم تحصيل هذا الكود بنجاح ✓</span>
+                  </span>
+                ) : isActiveQrExpired ? (
+                  <span className="inline-flex items-center gap-1.5 bg-rose-600 text-white text-xs font-extrabold px-4 py-1.5 rounded-full">
+                    <i className="fa-solid fa-clock-rotate-left" />
+                    <span>منتهي الصلاحية (مضى أكثر من 15 دقيقة)</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2 bg-gold-500 text-espresso-900 text-xs font-extrabold px-4 py-1.5 rounded-full">
+                    <i className="fa-solid fa-hourglass-half animate-pulse" />
+                    <span>صالح للمسح — ينتهي خلال {formatCountdown(activeQrRemaining)} دقيقة</span>
+                  </span>
+                )}
               </div>
 
               <h3 className="font-serif text-3xl font-bold text-white">+{qrData.points} نقطة ولاء</h3>
 
-              <div className="bg-white p-4 rounded-3xl inline-block mx-auto shadow-lg border-4 border-gold-400">
-                <img src={qrData.qrDataUrl} alt="Customer Loyalty QR Code" className="w-52 h-52 sm:w-60 sm:h-60 object-contain mx-auto" />
-              </div>
+              {qrData.qrDataUrl && !isActiveQrExpired && qrData.status === "PENDING" ? (
+                <div className="bg-white p-4 rounded-3xl inline-block mx-auto shadow-lg border-4 border-gold-400">
+                  <img src={qrData.qrDataUrl} alt="Customer Loyalty QR Code" className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto" />
+                </div>
+              ) : (
+                <div className="max-w-sm mx-auto py-6 px-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-cream-200">
+                  {qrData.status === "CLAIMED"
+                    ? "تم مسح هذا الكود وإضافة النقاط لحساب العميل."
+                    : "انتهت مهلة الـ 15 دقيقة لهذا الكود. يمكنك إنشاء كود جديد بالأعلى."}
+                </div>
+              )}
 
-              {/* Compact Copy Link Section (Alternative to Scanning QR) */}
+              {/* Direct Claim Link Copy Box */}
               <div className="max-w-md mx-auto bg-white/10 backdrop-blur-md border border-gold-400/40 rounded-2xl p-3.5 text-right space-y-2">
                 <div className="flex items-center justify-between text-[11px] text-gold-400 font-bold px-1">
                   <span>
                     <i className="fa-solid fa-link ml-1" />
-                    رابط تحصيل النقاط المباشر (بدون مسح الكود):
+                    رابط تحصيل النقاط المباشر (بديل المسح):
                   </span>
-                  {copiedLink && <span className="text-emerald-400">تم نسخ الرابط للحافظة ✓</span>}
+                  {copiedLink && <span className="text-emerald-400">تم نسخ الرابط ✓</span>}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -274,8 +381,9 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
 
                   <button
                     type="button"
+                    disabled={isActiveQrExpired || qrData.status !== "PENDING"}
                     onClick={() => handleCopyClaimLink(qrData.claimUrl)}
-                    className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 ${
                       copiedLink ? "bg-emerald-600 text-white" : "bg-gold-500 hover:bg-gold-400 text-espresso-900"
                     }`}
                   >
@@ -285,101 +393,109 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
                 </div>
               </div>
 
-              {/* Action Buttons: Print, Share via WhatsApp, or Close */}
-              <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(
-                    `شكراً لتسوقك من متجر زهرة لينا 🌸!\nاضغط على الرابط التالي لتحصيل (+${qrData.points} نقطة ولاء) في حسابك:\n${qrData.claimUrl}`,
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5"
-                >
-                  <i className="fa-brands fa-whatsapp text-sm" />
-                  <span>إرسال الرابط عبر واتساب</span>
-                </a>
-
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold px-4 py-2 rounded-full transition cursor-pointer"
-                >
-                  <i className="fa-solid fa-print ml-1.5 text-gold-400" />
-                  طباعة مع الفاتورة
-                </button>
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+                {!isActiveQrExpired && qrData.status === "PENDING" && (
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `شكراً لتسوقك من متجر زهرة لينا 🌸!\nاضغط على الرابط التالي خلال 15 دقيقة لتحصيل (+${qrData.points} نقطة ولاء) في حسابك:\n${qrData.claimUrl}`,
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5"
+                  >
+                    <i className="fa-brands fa-whatsapp text-sm" />
+                    <span>إرسال عبر واتساب</span>
+                  </a>
+                )}
 
                 <button
                   type="button"
                   onClick={() => setQrData(null)}
                   className="bg-rosewarm-600/80 hover:bg-rosewarm-600 text-white text-xs font-bold px-4 py-2 rounded-full transition cursor-pointer"
                 >
-                  إغلاق الكود
+                  إخفاء الكود
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Left Column (5 Cols): Verify & Redeem Customer Voucher Code */}
-        <div className="lg:col-span-5 bg-white rounded-3xl border border-cream-300 shadow-luxury p-6 sm:p-8 space-y-6">
-          <div className="flex items-center gap-3 border-b border-cream-200 pb-4">
-            <div className="w-11 h-11 rounded-2xl bg-gold-100 text-gold-600 flex items-center justify-center text-xl border border-gold-400/40">
-              <i className="fa-solid fa-ticket" />
-            </div>
+        {/* ============================================================
+            SECTION 2: التحقق من كود مكافأة أو خصم (Voucher Verification)
+            ============================================================ */}
+        <div className="lg:col-span-5 bg-white p-6 sm:p-8 rounded-3xl border border-cream-300 shadow-luxury space-y-5">
+          <div className="border-b border-cream-200 pb-4">
+            <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900 flex items-center gap-2">
+              <i className="fa-solid fa-ticket text-gold-600" />
+              <span>التحقق من كود مكافأة أو خصم</span>
+            </h2>
+            <p className="text-xs text-espresso-800/70 mt-1">
+              أدخل كود القسيمة الذي يظهره العميل (مثل <code dir="ltr">FLW-XXXXXX</code>) للتحقق من صلاحيته وتفعيله
+            </p>
+          </div>
+
+          <form onSubmit={handleCheckVoucher} className="space-y-3">
             <div>
-              <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900">التحقق من كود مكافأة أو خصم</h2>
-              <p className="text-xs text-espresso-800/70">أدخل الكود الذي يظهر في جوال العميل (مثال: FLW-8A9B2C)</p>
+              <label className="block text-xs font-bold text-espresso-900 mb-1.5">كود قسيمة العميل:</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  required
+                  dir="ltr"
+                  value={voucherCode}
+                  onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+                  placeholder="FLW-8A9B2C"
+                  className="flex-1 rounded-xl bg-cream-50 border border-cream-300 px-4 py-2.5 text-sm font-mono font-extrabold uppercase tracking-wider text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={verifyingVoucher}
+                  className="bg-espresso-900 hover:bg-rosewarm-600 text-cream-50 font-bold px-5 py-2.5 rounded-xl text-xs sm:text-sm transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <i className="fa-solid fa-magnifying-glass text-gold-400" />
+                  <span>{verifyingVoucher ? "جاري الفحص..." : "فحص الكود"}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          </form>
 
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-espresso-900">كود القسيمة / المكافأة:</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={voucherInput}
-                onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
-                placeholder="FLW-XXXXXX"
-                dir="ltr"
-                className="flex-1 text-center font-mono tracking-widest uppercase font-bold text-base rounded-2xl bg-cream-50 border border-cream-300 px-4 py-3 text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
+          {voucherFeedback && (
+            <div
+              className={`p-4 rounded-2xl border text-xs font-bold flex items-center gap-2.5 ${
+                voucherFeedback.type === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                  : "bg-rose-50 border-rose-200 text-rose-700"
+              }`}
+            >
+              <i
+                className={`fa-solid ${
+                  voucherFeedback.type === "success" ? "fa-circle-check text-emerald-600" : "fa-circle-exclamation text-rose-600"
+                } text-base`}
               />
-              <button
-                type="button"
-                disabled={loadingVoucher || !voucherInput.trim()}
-                onClick={() => handleVoucherAction("CHECK")}
-                className="bg-espresso-900 hover:bg-espresso-800 disabled:opacity-50 text-gold-400 font-bold px-5 py-3 rounded-2xl text-xs sm:text-sm transition cursor-pointer shrink-0"
-              >
-                {loadingVoucher ? "..." : "فحص الكود"}
-              </button>
-            </div>
-          </div>
-
-          {voucherError && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-              <i className="fa-solid fa-circle-xmark" />
-              <span>{voucherError}</span>
+              <span>{voucherFeedback.text}</span>
             </div>
           )}
 
-          {voucherSuccess && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
-              <i className="fa-solid fa-circle-check" />
-              <span>{voucherSuccess}</span>
-            </div>
-          )}
-
-          {/* Voucher Lookup Result Card */}
+          {/* Verified Voucher Details Card */}
           {voucherResult && (
-            <div className="p-5 rounded-2xl bg-cream-100 border border-cream-300 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-bold text-base bg-white px-3 py-1 rounded-xl border border-cream-300">
+            <div
+              className={`p-5 rounded-2xl border-2 space-y-4 ${
+                voucherResult.status === "ACTIVE" ? "bg-gold-100/40 border-gold-400" : "bg-stone-100 border-stone-300 opacity-80"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  dir="ltr"
+                  className="font-mono text-base font-extrabold bg-white px-3 py-1 rounded-xl border border-cream-300 text-espresso-900"
+                >
                   {voucherResult.rewardCode}
                 </span>
+
                 <span
                   className={`text-xs font-bold px-3 py-1 rounded-full ${
                     voucherResult.status === "ACTIVE"
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                      : "bg-stone-200 text-stone-600"
+                      : "bg-rose-100 text-rose-800 border border-rose-200"
                   }`}
                 >
                   {voucherResult.status === "ACTIVE" ? "صالح للاستخدام ✓" : "مستخدم مسبقاً ✗"}
@@ -387,27 +503,28 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
               </div>
 
               <div className="space-y-1.5 text-xs sm:text-sm">
-                <p className="font-bold text-espresso-900 text-base">
+                <p className="font-bold text-base text-rosewarm-600">
                   {voucherResult.rewardType === "FREE_BOUQUET"
-                    ? "💐 مكافأة: باقة ورد مجانية (500 نقطة)"
-                    : `🏷️ مكافأة: خصم ${voucherResult.discountAmount} ر.س (100 نقطة)`}
+                    ? "💐 مكافأة: باقة ورد طبيعي مجانية (500 نقطة)"
+                    : `🏷️ مكافأة: خصم فوري بقيمة ${voucherResult.discountAmount} ر.س (100 نقطة)`}
                 </p>
-                <p className="text-espresso-800/80">
+                <p className="text-espresso-800">
                   <strong>اسم العميل:</strong> {voucherResult.customerName}
                 </p>
-                <p className="text-espresso-800/80">
-                  <strong>الجوال/البريد:</strong> <span dir="ltr">{voucherResult.customerContact}</span>
+                <p className="text-espresso-800" dir="ltr">
+                  <strong>الجوال / الحساب:</strong> {voucherResult.customerPhone}
                 </p>
               </div>
 
               {voucherResult.status === "ACTIVE" && (
                 <button
                   type="button"
-                  disabled={loadingVoucher}
-                  onClick={() => handleVoucherAction("USE")}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow transition text-xs sm:text-sm cursor-pointer"
+                  disabled={redeemingVoucher}
+                  onClick={handleMarkVoucherUsed}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
                 >
-                  تأكيد تسليم المكافأة وتحويل الكود إلى (مستخدم)
+                  <i className="fa-solid fa-check-double" />
+                  <span>{redeemingVoucher ? "جاري تأكيد الاستخدام..." : "تأكيد استخدام القسيمة وتطبيق الخصم الآن"}</span>
                 </button>
               )}
             </div>
@@ -415,57 +532,120 @@ export default function StaffPOSClient({ recentTokens }: { recentTokens: RecentT
         </div>
       </div>
 
-      {/* Bottom Section: Recent QR Codes Log */}
-      <div className="bg-white rounded-3xl border border-cream-300 shadow-luxury p-6 sm:p-8 space-y-4">
-        <div className="flex items-center justify-between border-b border-cream-200 pb-3">
-          <h3 className="font-serif text-lg sm:text-xl font-bold text-espresso-900 flex items-center gap-2">
-            <i className="fa-solid fa-clock-rotate-left text-gold-600" />
-            <span>آخر أكواد النقاط الصادرة من الفرع</span>
-          </h3>
+      {/* ============================================================
+          SECTION 3: Created QR Codes History Table
+          ============================================================ */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-cream-300 shadow-luxury space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cream-200 pb-4">
+          <div>
+            <h3 className="font-serif text-xl font-bold text-espresso-900 flex items-center gap-2">
+              <i className="fa-solid fa-clock-rotate-left text-gold-600" />
+              <span>سجل أكواد الـ QR الصادرة ({tokensHistory.length})</span>
+            </h3>
+            <p className="text-xs text-espresso-800/70 mt-0.5">
+              اضغط على &quot;إظهار الكود والرابط&quot; لإعادة عرض أي كود أو نسخ رابطه المباشر
+            </p>
+          </div>
+
           <button
             type="button"
-            onClick={() => router.refresh()}
-            className="text-xs font-bold text-rosewarm-600 hover:underline flex items-center gap-1 cursor-pointer"
+            onClick={fetchHistory}
+            className="bg-cream-100 hover:bg-cream-200 text-espresso-900 border border-cream-300 text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer"
           >
-            <i className="fa-solid fa-rotate" /> تحديث الحالة
+            <i className={`fa-solid fa-rotate ${loadingHistory ? "animate-spin" : ""}`} />
+            <span>تحديث السجل</span>
           </button>
         </div>
 
-        {recentTokens.length === 0 ? (
-          <p className="text-xs text-espresso-800/60 text-center py-6">لم يتم إصدار أي أكواد QR حتى الآن.</p>
+        {tokensHistory.length === 0 ? (
+          <div className="py-12 text-center text-xs sm:text-sm text-espresso-800/60">لم يتم إصدار أي أكواد QR حتى الآن.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs sm:text-sm">
               <thead>
                 <tr className="border-b border-cream-200 text-espresso-800/70">
-                  <th className="py-3 px-2">النقاط</th>
-                  <th className="py-3 px-2">الحالة</th>
-                  <th className="py-3 px-2">العميل المستفيد</th>
-                  <th className="py-3 px-2">وقت الإصدار</th>
+                  <th className="py-3 px-3">النقاط</th>
+                  <th className="py-3 px-3">الموظف / العميل</th>
+                  <th className="py-3 px-3">الحالة والوقت المتبقي</th>
+                  <th className="py-3 px-3">وقت الإصدار</th>
+                  <th className="py-3 px-3 text-left">إظهار الكود والرابط</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-200/70">
-                {recentTokens.map((t) => (
-                  <tr key={t.id} className="hover:bg-cream-50">
-                    <td className="py-3 px-2 font-extrabold text-rosewarm-600">+{t.points_amount} نقطة</td>
-                    <td className="py-3 px-2">
-                      <span
-                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                          t.status === "CLAIMED" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {t.status === "CLAIMED" ? "تم المسح ✓" : "بانتظار المسح..."}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 font-semibold text-espresso-900">{t.claimed_by_name || "—"}</td>
-                    <td className="py-3 px-2 text-xs text-espresso-800/60">
-                      {new Date(t.created_at).toLocaleTimeString("ar-SA", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                  </tr>
-                ))}
+                {tokensHistory.map((item) => {
+                  const remaining = getRemainingSeconds(item.expiresAt, nowMs);
+                  const effectiveStatus = item.status === "PENDING" && remaining === 0 ? "EXPIRED" : item.status;
+
+                  return (
+                    <tr
+                      key={item.tokenId}
+                      className={`transition ${effectiveStatus === "EXPIRED" ? "bg-stone-100/70 opacity-70" : "hover:bg-cream-50"}`}
+                    >
+                      <td className="py-3.5 px-3 font-extrabold text-rosewarm-600">+{item.points} نقطة</td>
+
+                      <td className="py-3.5 px-3 text-espresso-800">
+                        <span className="block text-xs">بواسطة: {item.createdByStaffName || "موظف الفرع"}</span>
+                        {item.claimedByName && (
+                          <span className="block text-[11px] text-emerald-700 font-bold mt-0.5">حصل عليها: {item.claimedByName}</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-3">
+                        {effectiveStatus === "CLAIMED" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <i className="fa-solid fa-check" />
+                            <span>تم التحصيل ✓</span>
+                          </span>
+                        ) : effectiveStatus === "EXPIRED" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                            <i className="fa-regular fa-clock" />
+                            <span>منتهي الصلاحية (Expired)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                            <i className="fa-solid fa-hourglass-half text-amber-700" />
+                            <span>متاح ({formatCountdown(remaining)})</span>
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-3 text-xs text-espresso-800/70">
+                        {new Date(item.createdAt).toLocaleTimeString("ar-SA", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+
+                      <td className="py-3.5 px-3 text-left">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleShowCodeAgain(item)}
+                            className="bg-espresso-900 hover:bg-rosewarm-600 text-cream-50 text-[11px] font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <i className="fa-solid fa-qrcode text-gold-400" />
+                            <span>إظهار الكود والرابط</span>
+                          </button>
+
+                          {effectiveStatus === "PENDING" && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyRowLink(item.tokenId, item.claimUrl)}
+                              className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer ${
+                                copiedRowId === item.tokenId
+                                  ? "bg-emerald-600 text-white border-emerald-600"
+                                  : "bg-gold-100 hover:bg-gold-400 text-espresso-900 border-gold-400/60"
+                              }`}
+                            >
+                              <i className={`fa-solid ${copiedRowId === item.tokenId ? "fa-check" : "fa-link"}`} />
+                              <span>{copiedRowId === item.tokenId ? "نُسخ!" : "نسخ الرابط"}</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
