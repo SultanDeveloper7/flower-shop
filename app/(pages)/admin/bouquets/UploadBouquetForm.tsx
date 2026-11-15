@@ -43,6 +43,7 @@ export default function UploadBouquetForm({ categories, initialProducts }: Props
 
   // 3. Filter & Feedback State
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -262,8 +263,19 @@ export default function UploadBouquetForm({ categories, initialProducts }: Props
     }
   };
 
-  const filteredProducts =
-    filterCategory === "all" ? initialProducts : initialProducts.filter((p) => p.categoryId === parseInt(filterCategory, 10));
+  const filteredProducts = initialProducts.filter((p) => {
+    const matchesCategory = filterCategory === "all" || p.categoryId === parseInt(filterCategory, 10);
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return matchesCategory;
+
+    const titleMatch = (p.title || "").toLowerCase().includes(q);
+    const descMatch = (p.description || "").toLowerCase().includes(q);
+    const tagsMatch = Array.isArray(p.tags) ? p.tags.some((t) => t.toLowerCase().includes(q)) : false;
+    const priceMatch = String(p.price).includes(q);
+
+    return matchesCategory && (titleMatch || descMatch || tagsMatch || priceMatch);
+  });
 
   return (
     <div className="space-y-8">
@@ -472,26 +484,50 @@ export default function UploadBouquetForm({ categories, initialProducts }: Props
         </form>
       </div>
 
-      {/* Bottom Section: Manage Existing Products (Edit & Delete) */}
+      {/* Bottom Section: Manage Existing Products (List View + Search + Category Filter) */}
       <div className="bg-white p-5 sm:p-7 rounded-3xl border border-cream-300 shadow-luxury space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cream-200 pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-cream-200 pb-4">
           <div>
             <h3 className="font-serif font-bold text-lg sm:text-xl text-espresso-900 flex items-center gap-2">
-              <i className="fa-solid fa-images text-gold-600" />
-              <span>إدارة وتعديل الباقات الحالية ({initialProducts.length})</span>
+              <i className="fa-solid fa-list-check text-gold-600" />
+              <span>
+                إدارة وتعديل الباقات الحالية ({filteredProducts.length} من {initialProducts.length})
+              </span>
             </h3>
             <p className="text-xs text-espresso-800/70 mt-0.5">
-              اضغط على أيقونة القلم لتعديل السعر أو الاسم أو الصورة أو القسم، أو سلة المهملات للحذف
+              ابحث باسم الباقة أو الوسوم، أو قم بتعديل السعر والصورة وحالة التوفر مباشرة
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Search Input + Category Dropdown */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث باسم الباقة، الوصف، أو السعر..."
+                className="w-full rounded-xl bg-cream-100 border border-cream-300 py-2 pr-9 pl-8 text-xs text-espresso-900 focus:border-rosewarm-500 focus:bg-white focus:outline-none transition"
+              />
+              <i className="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-rosewarm-500 text-xs" />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-espresso-800/50 hover:text-rose-600 text-xs cursor-pointer"
+                  title="مسح البحث"
+                >
+                  <i className="fa-solid fa-circle-xmark" />
+                </button>
+              )}
+            </div>
+
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="rounded-xl bg-cream-100 border border-cream-300 px-3.5 py-2 text-xs font-bold text-espresso-900 focus:outline-none cursor-pointer"
+              className="rounded-xl bg-cream-100 border border-cream-300 px-3.5 py-2 text-xs font-bold text-espresso-900 focus:border-rosewarm-500 focus:outline-none cursor-pointer"
             >
-              <option value="all">عرض كل الأقسام (1 - 10)</option>
+              <option value="all">كل الأقسام ({initialProducts.length})</option>
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   القسم {cat.id}: {cat.name}
@@ -502,12 +538,24 @@ export default function UploadBouquetForm({ categories, initialProducts }: Props
         </div>
 
         {filteredProducts.length === 0 ? (
-          <div className="text-center py-12 bg-cream-50 rounded-2xl border border-cream-200">
-            <i className="fa-solid fa-spa text-2xl text-rosewarm-500 mb-2" />
-            <p className="text-xs sm:text-sm text-espresso-800/70 font-semibold">لا توجد منتجات مضافة في هذا القسم حالياً.</p>
+          <div className="text-center py-12 bg-cream-50 rounded-2xl border border-cream-200 space-y-2">
+            <i className="fa-solid fa-magnifying-glass text-2xl text-rosewarm-500" />
+            <p className="text-xs sm:text-sm text-espresso-800/70 font-semibold">لا توجد باقات مطابقة لبحثك حالياً.</p>
+            {(searchQuery || filterCategory !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setFilterCategory("all");
+                }}
+                className="text-xs font-bold text-rosewarm-600 underline cursor-pointer"
+              >
+                إعادة ضبط الفلتر وعرض الكل
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[480px] overflow-y-auto p-1">
+          <div className="divide-y divide-cream-200 border border-cream-300 rounded-2xl overflow-hidden bg-cream-50/40 max-h-[560px] overflow-y-auto">
             {filteredProducts.map((item) => {
               const cat = categories.find((c) => c.id === item.categoryId);
               const isItemActive = item.isActive ?? true;
@@ -515,73 +563,101 @@ export default function UploadBouquetForm({ categories, initialProducts }: Props
               return (
                 <div
                   key={item.id}
-                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs ${
-                    isItemActive ? "border-cream-300 bg-cream-50 hover:bg-white" : "border-stone-300 bg-stone-100/80 opacity-75"
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 sm:px-5 transition-colors ${
+                    isItemActive ? "bg-white hover:bg-cream-50/90" : "bg-stone-100/80 opacity-75"
                   }`}
                 >
-                  <div className="relative shrink-0">
-                    <img
-                      src={item.image}
-                      alt={item.title}
-                      className={`w-16 h-16 rounded-xl object-cover border border-cream-300 bg-cream-200 ${
-                        !isItemActive ? "grayscale" : ""
-                      }`}
-                    />
-                    {!isItemActive && (
-                      <span className="absolute inset-0 bg-espresso-900/60 rounded-xl flex items-center justify-center text-[10px] font-bold text-white">
-                        مخفي
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-rosewarm-600 truncate">{cat ? `القسم ${cat.id}: ${cat.name}` : ""}</span>
+                  {/* Right Side: Thumbnail + Category + Title + Description & Tags */}
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                    <div className="relative shrink-0">
+                      <img
+                        src={item.image}
+                        alt={item.title}
+                        className={`w-16 h-16 sm:w-18 sm:h-18 rounded-2xl object-cover border border-cream-300 bg-cream-200 ${
+                          !isItemActive ? "grayscale" : ""
+                        }`}
+                      />
+                      {!isItemActive && (
+                        <span className="absolute inset-0 bg-espresso-900/60 rounded-2xl flex items-center justify-center text-[10px] font-bold text-white">
+                          مخفي
+                        </span>
+                      )}
+                      {item.featured && isItemActive && (
+                        <span
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gold-500 text-espresso-900 flex items-center justify-center text-[10px] shadow"
+                          title="باقة مميزة"
+                        >
+                          ⭐
+                        </span>
+                      )}
                     </div>
 
-                    <h4 className="font-bold text-xs sm:text-sm text-espresso-900 truncate mt-0.5">{item.title}</h4>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {cat && (
+                          <span className="text-[10px] font-bold bg-rosewarm-100/80 text-rosewarm-700 px-2.5 py-0.5 rounded-full">
+                            {cat.name}
+                          </span>
+                        )}
+                        {item.pointsPrice && (
+                          <span className="text-[10px] bg-gold-100 text-espresso-900 border border-gold-400/50 px-2 py-0.5 rounded-full font-bold">
+                            🎁 مجاناً بـ {item.pointsPrice} نقطة
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="text-xs font-extrabold text-espresso-900">{item.price} ر.س</span>
+                      <h4 className="font-bold text-sm sm:text-base text-espresso-900 truncate">{item.title}</h4>
 
-                      {/* In-Stock / Out-of-Stock Quick Toggle Switch */}
+                      {item.description && <p className="text-xs text-espresso-800/70 line-clamp-1">{item.description}</p>}
+                    </div>
+                  </div>
+
+                  {/* Left Side: Price + Availability Switch + Edit & Delete Buttons */}
+                  <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-cream-200 shrink-0">
+                    {/* Price Display */}
+                    <div className="text-right sm:text-left px-2">
+                      <span className="text-[10px] text-espresso-800/60 block">السعر</span>
+                      <span className="text-sm sm:text-base font-extrabold text-rosewarm-600 whitespace-nowrap">{item.price} ر.س</span>
+                    </div>
+
+                    {/* In-Stock / Out-of-Stock Toggle */}
+                    <button
+                      type="button"
+                      disabled={togglingId === item.id}
+                      onClick={() => handleToggleActive(item)}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                        isItemActive
+                          ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300"
+                          : "bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300"
+                      }`}
+                      title={isItemActive ? "الباقة معروضة في المتجر — اضغط لإخفائها مؤقتاً" : "الباقة مخفية من المتجر — اضغط لإظهارها"}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isItemActive ? "bg-emerald-600" : "bg-stone-500"}`} />
+                      <span>{togglingId === item.id ? "..." : isItemActive ? "متوفر ✓" : "مخفي"}</span>
+                    </button>
+
+                    {/* Edit & Delete Buttons */}
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        disabled={togglingId === item.id}
-                        onClick={() => handleToggleActive(item)}
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
-                          isItemActive
-                            ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300"
-                            : "bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300"
-                        }`}
-                        title={isItemActive ? "الباقة معروضة في المتجر — اضغط لإخفائها مؤقتاً" : "الباقة مخفية من المتجر — اضغط لإظهارها"}
+                        onClick={() => openEditModal(item)}
+                        className="px-3 py-1.5 rounded-xl bg-gold-100 hover:bg-gold-500 text-espresso-900 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="تعديل بيانات وصورة الباقة"
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isItemActive ? "bg-emerald-600" : "bg-stone-500"}`} />
-                        <span>{togglingId === item.id ? "..." : isItemActive ? "متوفر ✓" : "نفدت (مخفي)"}</span>
+                        <i className="fa-solid fa-pen-to-square text-xs" />
+                        <span className="hidden md:inline">تعديل</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={deletingId === item.id}
+                        onClick={() => handleDeleteProduct(item.id, item.title)}
+                        className="w-8 h-8 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
+                        title="حذف المنتج نهائياً"
+                      >
+                        <i className={`fa-solid ${deletingId === item.id ? "fa-spinner animate-spin" : "fa-trash-can"} text-xs`} />
                       </button>
                     </div>
-                  </div>
-
-                  {/* Action Buttons: Edit & Delete */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(item)}
-                      className="w-8 h-8 rounded-xl bg-gold-100 hover:bg-gold-500 text-espresso-900 flex items-center justify-center transition-colors cursor-pointer"
-                      title="تعديل بيانات وصورة الباقة"
-                    >
-                      <i className="fa-solid fa-pen-to-square text-xs" />
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={deletingId === item.id}
-                      onClick={() => handleDeleteProduct(item.id, item.title)}
-                      className="w-8 h-8 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
-                      title="حذف المنتج نهائياً"
-                    >
-                      <i className={`fa-solid ${deletingId === item.id ? "fa-spinner animate-spin" : "fa-trash-can"} text-xs`} />
-                    </button>
                   </div>
                 </div>
               );
