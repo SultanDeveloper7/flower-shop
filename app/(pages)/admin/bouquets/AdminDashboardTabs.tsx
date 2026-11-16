@@ -21,16 +21,6 @@ interface ActiveSessionItem {
   isCurrentDevice: boolean;
 }
 
-interface UserRecord {
-  id: number;
-  name: string;
-  phone_or_email: string;
-  role: "CUSTOMER" | "STAFF" | "ADMIN";
-  points_balance: number;
-  is_blocked: number | boolean;
-  created_at: string;
-}
-
 function formatDeviceAgent(ua?: string) {
   if (!ua) return { label: "جهاز غير معروف", icon: "fa-solid fa-laptop" };
   const lower = ua.toLowerCase();
@@ -63,23 +53,13 @@ export default function AdminDashboardTabs({
   initialProducts: Product[];
   initialCategories: Category[];
 }) {
-  const [activeTab, setActiveTab] = useState<"bouquets" | "categories" | "orders" | "sessions" | "users">("bouquets");
+  const [activeTab, setActiveTab] = useState<TabKey>("bouquets");
   const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   // Sessions State
   const [sessions, setSessions] = useState<ActiveSessionItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
-
-  // Users State
-  const [users, setUsers] = useState<UserRecord[]>([]);
-  const [userSearch, setUserSearch] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(false);
-
-  // Points Adjustment Modal State
-  const [pointsModalUser, setPointsModalUser] = useState<UserRecord | null>(null);
-  const [pointsOperation, setPointsOperation] = useState<"ADD" | "DEDUCT">("ADD");
-  const [pointsAmount, setPointsAmount] = useState<number>(50);
-  const [savingPoints, setSavingPoints] = useState(false);
 
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -99,21 +79,21 @@ export default function AdminDashboardTabs({
     }
   };
 
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
-    try {
-      const res = await fetch("/api/admin/users");
-      const data = await res.json();
-      if (res.ok) setUsers(data.users || []);
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
   useEffect(() => {
     if (activeTab === "sessions") fetchSessions();
-    if (activeTab === "users") fetchUsers();
   }, [activeTab]);
+
+  // Lock background scrolling when mobile drawer is open
+  useEffect(() => {
+    if (mobileDrawerOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileDrawerOpen]);
 
   const handleRevokeSession = async (sessionId: string, userName: string) => {
     const res = await fetch(`/api/admin/sessions?sessionId=${sessionId}`, {
@@ -124,88 +104,6 @@ export default function AdminDashboardTabs({
       fetchSessions();
     }
   };
-
-  const handleToggleBlockUser = async (user: UserRecord) => {
-    const nextBlocked = !Boolean(user.is_blocked);
-    const res = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id, isBlocked: nextBlocked }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast(data.message);
-      fetchUsers();
-    } else {
-      alert(data.error || "حدث خطأ");
-    }
-  };
-
-  const handleRoleChange = async (userId: number, newRole: string) => {
-    const res = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, role: newRole }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast("تم تحديث صلاحية الحساب بنجاح ✓");
-      fetchUsers();
-    } else {
-      alert(data.error || "تعذر تغيير الصلاحية");
-    }
-  };
-
-  // Open Points Modal for a specific user
-  const openPointsModal = (user: UserRecord) => {
-    setPointsModalUser(user);
-    setPointsOperation("ADD");
-    setPointsAmount(50);
-  };
-
-  // Submit Manual Points Adjustment
-  const handleConfirmPointsAdjustment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pointsModalUser || pointsAmount <= 0) return;
-
-    setSavingPoints(true);
-    const delta = pointsOperation === "ADD" ? Number(pointsAmount) : -Number(pointsAmount);
-
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: pointsModalUser.id,
-          pointsDelta: delta,
-        }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        showToast(data.message);
-        setPointsModalUser(null);
-        fetchUsers();
-      } else {
-        alert(data.error || "تعذر تحديث النقاط");
-      }
-    } finally {
-      setSavingPoints(false);
-    }
-  };
-
-  const filteredUsers = users.filter((u) => {
-    const q = userSearch.trim().toLowerCase();
-    return !q || u.name.toLowerCase().includes(q) || u.phone_or_email.toLowerCase().includes(q);
-  });
-
-  // Calculate preview balance inside modal
-  const previewBalance = pointsModalUser
-    ? Math.max(
-        0,
-        Number(pointsModalUser.points_balance) + (pointsOperation === "ADD" ? Number(pointsAmount || 0) : -Number(pointsAmount || 0)),
-      )
-    : 0;
 
   const navItems: {
     key: TabKey;
@@ -238,7 +136,7 @@ export default function AdminDashboardTabs({
       key: "sessions",
       label: "الجلسات والأجهزة",
       subtitle: "الأجهزة المتصلة وتسجيل الخروج",
-      icon: "fa-solid fa-laptop-mobile",
+      icon: "fa-solid fa-desktop",
       badgeCount: sessions.length > 0 ? sessions.length : undefined,
     },
     {
@@ -246,32 +144,45 @@ export default function AdminDashboardTabs({
       label: "المستخدمين والنقاط",
       subtitle: "تعديل النقاط وحظر الحسابات",
       icon: "fa-solid fa-user-shield",
-      badgeCount: users.length > 0 ? users.length : undefined,
     },
   ];
 
-  return (
-    /* Outer flex container with dir="ltr" so the sidebar is pinned on the LEFT side */
-    <div dir="ltr" className="flex flex-col lg:flex-row gap-6 items-start">
-      {/* ============================================================
-          LEFT SIDEBAR NAVIGATION
-          ============================================================ */}
-      <aside
-        dir="rtl"
-        className="w-full lg:w-72 shrink-0 bg-white rounded-3xl border border-cream-300 shadow-luxury overflow-hidden lg:sticky lg:top-6"
-      >
-        {/* Sidebar Brand Header */}
-        <div className="p-5 bg-espresso-900 text-cream-50 border-b border-gold-500/30 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gold-500 text-espresso-900 flex items-center justify-center text-lg font-bold shadow-sm shrink-0">
-            <i className="fa-solid fa-crown" />
+  const activeNavItem = navItems.find((item) => item.key === activeTab) || navItems[0];
+
+  const handleSelectTab = (key: TabKey) => {
+    setActiveTab(key);
+    setMobileDrawerOpen(false);
+  };
+
+  /* Shared Sidebar Content (used by both Desktop Sidebar & Mobile Left Drawer) */
+  const renderSidebarContent = (isMobileDrawer = false) => (
+    <div dir="rtl" className="flex flex-col h-full justify-between bg-white">
+      <div>
+        {/* Brand Header */}
+        <div className="p-5 bg-espresso-900 text-cream-50 border-b border-gold-500/30 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-gold-500 text-espresso-900 flex items-center justify-center text-lg font-bold shadow-sm shrink-0">
+              <i className="fa-solid fa-crown" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-serif text-base sm:text-lg font-bold text-white truncate">لوحة تحكم زهرة لينا</h2>
+              <p className="text-[11px] text-gold-400">إدارة المتجر والولاء</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="font-serif text-base sm:text-lg font-bold text-white truncate">لوحة تحكم زهرة لينا</h2>
-            <p className="text-[11px] text-gold-400">إدارة المتجر والولاء</p>
-          </div>
+
+          {isMobileDrawer && (
+            <button
+              type="button"
+              onClick={() => setMobileDrawerOpen(false)}
+              aria-label="إغلاق القائمة"
+              className="w-9 h-9 rounded-full bg-espresso-800 hover:bg-rosewarm-600 text-white flex items-center justify-center transition cursor-pointer shrink-0"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          )}
         </div>
 
-        {/* Navigation Items List */}
+        {/* Navigation Items */}
         <nav className="p-3 space-y-1.5">
           {navItems.map((item) => {
             const isActive = activeTab === item.key;
@@ -279,7 +190,7 @@ export default function AdminDashboardTabs({
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setActiveTab(item.key)}
+                onClick={() => handleSelectTab(item.key)}
                 className={`w-full text-right p-3.5 rounded-2xl transition-all flex items-center justify-between gap-3 cursor-pointer ${
                   isActive ? "bg-espresso-900 text-gold-400 shadow-md" : "text-espresso-900 hover:bg-cream-100"
                 }`}
@@ -315,24 +226,83 @@ export default function AdminDashboardTabs({
             );
           })}
         </nav>
+      </div>
 
-        {/* Quick Links Footer inside Left Sidebar */}
-        <div className="p-3 pt-2 border-t border-cream-200 space-y-1.5 bg-cream-50/60">
-          <Link
-            href="/staff/pos"
-            className="w-full p-2.5 rounded-xl text-xs font-bold text-espresso-800 hover:bg-cream-200/70 transition flex items-center gap-2.5"
-          >
-            <i className="fa-solid fa-qrcode text-rosewarm-600 w-5 text-center" />
-            <span>شاشة الكاشير ونقاط الـ QR</span>
-          </Link>
-          <Link
-            href="/"
-            className="w-full p-2.5 rounded-xl text-xs font-bold text-espresso-800 hover:bg-cream-200/70 transition flex items-center gap-2.5"
-          >
-            <i className="fa-solid fa-store text-gold-600 w-5 text-center" />
-            <span>معاينة المتجر الرئيسي</span>
-          </Link>
+      {/* Quick Links Footer */}
+      <div className="p-3 pt-2 border-t border-cream-200 space-y-1.5 bg-cream-50/60">
+        <Link
+          href="/staff/pos"
+          onClick={() => setMobileDrawerOpen(false)}
+          className="w-full p-2.5 rounded-xl text-xs font-bold text-espresso-800 hover:bg-cream-200/70 transition flex items-center gap-2.5"
+        >
+          <i className="fa-solid fa-qrcode text-rosewarm-600 w-5 text-center" />
+          <span>شاشة الكاشير ونقاط الـ QR</span>
+        </Link>
+        <Link
+          href="/"
+          onClick={() => setMobileDrawerOpen(false)}
+          className="w-full p-2.5 rounded-xl text-xs font-bold text-espresso-800 hover:bg-cream-200/70 transition flex items-center gap-2.5"
+        >
+          <i className="fa-solid fa-store text-gold-600 w-5 text-center" />
+          <span>معاينة المتجر الرئيسي</span>
+        </Link>
+      </div>
+    </div>
+  );
+
+  return (
+    /* Outer flex container with dir="ltr" so the sidebar & drawer are pinned on the LEFT side */
+    <div dir="ltr" className="flex flex-col lg:flex-row gap-6 items-start">
+      {/* ============================================================
+          MOBILE TOP HEADER WITH LEFT DRAWER BUTTON (< lg screens)
+          ============================================================ */}
+      <div className="w-full lg:hidden bg-espresso-900 text-cream-50 px-4 py-3.5 rounded-2xl border border-gold-500/40 shadow-luxury flex items-center justify-between gap-3">
+        {/* Left Drawer Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setMobileDrawerOpen(true)}
+          aria-label="فتح قائمة الأقسام"
+          className="flex items-center gap-2.5 bg-gold-500 hover:bg-gold-400 text-espresso-900 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-sm transition cursor-pointer shrink-0"
+        >
+          <i className="fa-solid fa-bars text-sm" />
+          <span>الأقسام</span>
+        </button>
+
+        {/* Active Section Indicator (RTL) */}
+        <div dir="rtl" className="flex items-center gap-2.5 min-w-0">
+          <div className="min-w-0 text-right">
+            <span className="block text-[10px] text-gold-400">القسم الحالي</span>
+            <span className="block text-sm font-bold text-white truncate">{activeNavItem.label}</span>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-espresso-800 border border-gold-500/30 text-gold-400 flex items-center justify-center text-sm shrink-0">
+            <i className={activeNavItem.icon} />
+          </div>
         </div>
+      </div>
+
+      {/* ============================================================
+          MOBILE LEFT SLIDE-OUT DRAWER OVERLAY (< lg screens)
+          ============================================================ */}
+      {mobileDrawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex justify-start">
+          {/* Dark Backdrop */}
+          <div
+            onClick={() => setMobileDrawerOpen(false)}
+            className="fixed inset-0 bg-espresso-900/60 backdrop-blur-xs transition-opacity"
+          />
+
+          {/* Left Drawer Panel */}
+          <aside className="relative z-10 w-80 max-w-[85vw] h-full bg-white shadow-2xl border-r-2 border-gold-500/40 overflow-y-auto animate-in slide-in-from-left duration-200">
+            {renderSidebarContent(true)}
+          </aside>
+        </div>
+      )}
+
+      {/* ============================================================
+          DESKTOP PERMANENT LEFT SIDEBAR (lg+ screens)
+          ============================================================ */}
+      <aside className="hidden lg:block w-72 shrink-0 bg-white rounded-3xl border border-cream-300 shadow-luxury overflow-hidden sticky top-6">
+        {renderSidebarContent(false)}
       </aside>
 
       {/* ============================================================
@@ -353,7 +323,7 @@ export default function AdminDashboardTabs({
         )}
 
         {/* TAB 1: Bouquets Manager */}
-        {activeTab === "bouquets" && <UploadBouquetForm categories={[]} initialProducts={initialProducts} />}
+        {activeTab === "bouquets" && <UploadBouquetForm categories={categories} initialProducts={initialProducts} />}
 
         {/* TAB 2: Categories Manager */}
         {activeTab === "categories" && (
@@ -452,139 +422,6 @@ export default function AdminDashboardTabs({
         {/* TAB 5: Users, Points Adjustment & Block Management */}
         {activeTab === "users" && <UsersManager />}
       </div>
-
-      {/* Manual Points Adjustment Modal */}
-      {pointsModalUser && (
-        <div
-          dir="rtl"
-          onClick={() => setPointsModalUser(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-espresso-900/60 backdrop-blur-sm"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-cream-50 border-2 border-gold-400 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl"
-          >
-            <div className="px-6 py-4 bg-espresso-900 text-cream-50 flex items-center justify-between border-b border-gold-500/40">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gold-500 text-espresso-900 flex items-center justify-center font-bold">
-                  <i className="fa-solid fa-coins" />
-                </div>
-                <div>
-                  <h3 className="font-serif text-lg font-bold">تعديل رصيد نقاط العميل</h3>
-                  <p className="text-[11px] text-gold-400">{pointsModalUser.name}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPointsModalUser(null)}
-                className="w-8 h-8 rounded-full bg-espresso-800 hover:bg-rosewarm-500 text-white flex items-center justify-center cursor-pointer"
-              >
-                <i className="fa-solid fa-xmark" />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmPointsAdjustment} className="p-6 space-y-5">
-              <div className="grid grid-cols-2 gap-2 p-1.5 bg-cream-200/70 rounded-2xl border border-cream-300">
-                <button
-                  type="button"
-                  onClick={() => setPointsOperation("ADD")}
-                  className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    pointsOperation === "ADD" ? "bg-emerald-600 text-white shadow-sm" : "text-espresso-800 hover:text-espresso-900"
-                  }`}
-                >
-                  <i className="fa-solid fa-circle-plus" />
-                  <span>إضافة نقاط (+)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPointsOperation("DEDUCT")}
-                  className={`py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    pointsOperation === "DEDUCT" ? "bg-rose-600 text-white shadow-sm" : "text-espresso-800 hover:text-espresso-900"
-                  }`}
-                >
-                  <i className="fa-solid fa-circle-minus" />
-                  <span>خصم نقاط (-)</span>
-                </button>
-              </div>
-
-              <div>
-                <span className="block text-xs font-bold text-espresso-800/80 mb-2">اختيار سريع:</span>
-                <div className="flex flex-wrap gap-2">
-                  {[10, 25, 50, 100, 250, 500].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setPointsAmount(preset)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition cursor-pointer ${
-                        pointsAmount === preset
-                          ? "bg-espresso-900 text-gold-400 border-espresso-900"
-                          : "bg-white hover:bg-cream-200 text-espresso-900 border-cream-300"
-                      }`}
-                    >
-                      {pointsOperation === "ADD" ? `+${preset}` : `-${preset}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-espresso-900 mb-1.5">
-                  عدد النقاط المراد {pointsOperation === "ADD" ? "إضافتها" : "خصمها"}:
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="10000"
-                  required
-                  value={pointsAmount}
-                  onChange={(e) => setPointsAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full rounded-2xl bg-white border border-cream-300 px-4 py-3 text-center text-lg font-extrabold text-espresso-900 focus:border-rosewarm-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="bg-cream-200/60 border border-cream-300 rounded-2xl p-4 flex items-center justify-between text-xs sm:text-sm">
-                <div>
-                  <span className="text-espresso-800/70 block">الرصيد الحالي:</span>
-                  <strong className="text-base text-espresso-900">{pointsModalUser.points_balance} نقطة</strong>
-                </div>
-
-                <i className="fa-solid fa-arrow-left text-gold-600 text-base" />
-
-                <div className="text-left">
-                  <span className="text-espresso-800/70 block">الرصيد بعد التعديل:</span>
-                  <strong className={`text-lg font-extrabold ${pointsOperation === "ADD" ? "text-emerald-700" : "text-rose-600"}`}>
-                    {previewBalance} نقطة
-                  </strong>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPointsModalUser(null)}
-                  className="px-5 py-3 rounded-full text-xs font-bold text-espresso-800 hover:bg-cream-200 transition cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingPoints || pointsAmount <= 0}
-                  className={`flex-1 py-3 px-6 rounded-full text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer disabled:opacity-50 ${
-                    pointsOperation === "ADD" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
-                  }`}
-                >
-                  {savingPoints
-                    ? "جاري الحفظ..."
-                    : pointsOperation === "ADD"
-                      ? `تأكيد إضافة +${pointsAmount} نقطة`
-                      : `تأكيد خصم -${pointsAmount} نقطة`}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
