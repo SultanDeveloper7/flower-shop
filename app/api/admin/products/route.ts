@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { pool } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { RowDataPacket } from "mysql2";
+import { logAdminAction } from "@/lib/logger";
 
 // External folder on the Windows Server
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "C:/images/bouquets";
@@ -75,6 +76,8 @@ export async function POST(req: Request) {
       [categoryId, title, description, price, finalImageUrl, pointsPrice, tags, isFeatured],
     );
 
+    // await logAdminAction(session.id, session.name, "PRODUCT_ADD", `أضاف باقة جديدة: "${title}" (${price} ر.س)`);
+
     return NextResponse.json({
       message: "تم نشر الباقة وحفظ الصورة في المجلد الخارجي بنجاح!",
       imageUrl: finalImageUrl,
@@ -130,6 +133,7 @@ export async function PUT(req: Request) {
       [categoryId, title, description, price, finalImageUrl, pointsPrice, tags, isFeatured, id],
     );
 
+    // await logAdminAction(session.id, session.name, "PRODUCT_UPDATE", `حدث بيانات الباقة: "${title}" (${price} ر.س)`);
     return NextResponse.json({
       message: `تم تحديث بيانات "${title}" بنجاح!`,
       imageUrl: finalImageUrl,
@@ -153,6 +157,7 @@ export async function PATCH(req: Request) {
     }
 
     await pool.query("UPDATE products SET is_active = ? WHERE id = ?", [isActive, id]);
+    // await logAdminAction(session.id, session.name, "PRODUCT_UPDATE", `حدث بيانات الباقة: "${title}" (${price} ر.س)`);
 
     return NextResponse.json({
       message: isActive ? "تم إظهار الباقة في المتجر (متوفرة الآن) 🌸" : "تم إخفاء الباقة مؤقتاً من المتجر (نفدت الكمية)",

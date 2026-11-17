@@ -1,6 +1,7 @@
 "use client";
 
 import { Category, Product, STORE_WHATSAPP_NUMBER } from "@/constants/catalog";
+import Link from "next/link";
 
 interface ProductCardProps {
   product: Product;
@@ -57,11 +58,11 @@ export default function ProductCard({ product, categories, onOpenModal, onQuickA
 
     const messageLines = [
       `مرحباً زهرة لينا 🌸، أود طلب الباقة التالية:`,
-      orderNumber ? `• *رقم الطلب:* #${orderNumber}` : null,
-      `• *الاسم:* ${product.title}`,
-      category ? `• *القسم:* ${category.name}` : null,
-      `• *السعر:* ${product.price} ر.س`,
-      fullImageUrl ? `• *🖼️ صورة الباقة:*\n${fullImageUrl}` : null,
+      orderNumber ? `*رقم الطلب:* #${orderNumber}` : null,
+      `*الاسم:* ${product.title}`,
+      category ? `*القسم:* ${category.name}` : null,
+      `*السعر:* ${product.price} ر.س`,
+      fullImageUrl ? `*🖼️ صورة الباقة:*\n${fullImageUrl}` : null,
     ].filter(Boolean);
 
     const whatsappUrl = `https://wa.me/${STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(messageLines.join("\n"))}`;
@@ -76,13 +77,14 @@ export default function ProductCard({ product, categories, onOpenModal, onQuickA
   return (
     <article className="group bg-white rounded-3xl border border-cream-300 overflow-hidden shadow-luxury hover:shadow-luxury-hover transition-all duration-300 flex flex-col justify-between">
       <div>
-        <div onClick={() => onOpenModal(product)} className="relative aspect-square overflow-hidden bg-cream-200 cursor-pointer">
-          <img
-            src={product.image}
-            alt={product.title}
-            loading="lazy"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+        <div className="relative aspect-square overflow-hidden bg-cream-200 cursor-pointer">
+          <Link href={`/bouquet/${product.id}`} className="relative aspect-square overflow-hidden bg-cream-200 block">
+            <img
+              src={product.image}
+              alt={product.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+          </Link>
 
           {category && (
             <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-espresso-900 text-[11px] font-bold px-3 py-1 rounded-full shadow-sm border border-cream-300">
@@ -118,12 +120,11 @@ export default function ProductCard({ product, categories, onOpenModal, onQuickA
             ))}
           </div>
 
-          <h4
-            onClick={() => onOpenModal(product)}
-            className="font-serif text-lg sm:text-xl font-bold text-espresso-900 hover:text-rosewarm-600 cursor-pointer transition-colors line-clamp-1"
-          >
-            {product.title}
-          </h4>
+          <Link href={`/bouquet/${product.id}`}>
+            <h4 className="font-serif text-lg sm:text-xl font-bold text-espresso-900 hover:text-rosewarm-600 transition-colors line-clamp-1">
+              {product.title}
+            </h4>
+          </Link>
 
           <p className="text-xs text-espresso-800/75 mt-1.5 leading-relaxed line-clamp-2">{product.description}</p>
         </div>

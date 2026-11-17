@@ -7,8 +7,10 @@ import CategoriesManager from "./CategoriesManager";
 import OrdersManager from "./OrdersManager";
 import Link from "next/link";
 import UsersManager from "./UsersManager";
+// import LogsManager from "./LogsManager";
+import ReviewsManager from "./ReviewsManager";
 
-type TabKey = "bouquets" | "categories" | "orders" | "sessions" | "users";
+type TabKey = "bouquets" | "categories" | "orders" | "sessions" | "users" | "reviews";
 
 interface ActiveSessionItem {
   id: number;
@@ -144,6 +146,12 @@ export default function AdminDashboardTabs({
       label: "المستخدمين والنقاط",
       subtitle: "تعديل النقاط وحظر الحسابات",
       icon: "fa-solid fa-user-shield",
+    },
+    {
+      key: "reviews",
+      label: "تقييمات العملاء",
+      subtitle: "مراجعة واعتماد آراء الباقات",
+      icon: "fa-solid fa-star",
     },
   ];
 
@@ -421,6 +429,8 @@ export default function AdminDashboardTabs({
 
         {/* TAB 5: Users, Points Adjustment & Block Management */}
         {activeTab === "users" && <UsersManager />}
+        {/* {activeTab === "logs" && <LogsManager />} */}
+        {activeTab === "reviews" && <ReviewsManager />}
       </div>
     </div>
   );

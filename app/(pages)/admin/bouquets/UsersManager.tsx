@@ -8,6 +8,7 @@ export interface UserRecord {
   phone_or_email: string;
   role: "CUSTOMER" | "STAFF" | "ADMIN";
   points_balance: number;
+  review_strikes: number; // Added review strikes field
   is_blocked: number | boolean;
   created_at?: string;
 }
@@ -127,7 +128,7 @@ export default function UsersManager() {
     }
   };
 
-  // Null-safe filtering so null names/phones never crash the page
+  // Null-safe filtering
   const filteredUsers = users.filter((u) => {
     const q = userSearch.trim().toLowerCase();
     if (!q) return true;
@@ -167,16 +168,13 @@ export default function UsersManager() {
       )}
 
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-cream-300 shadow-luxury space-y-6">
-        {/* Header + Search + Refresh */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-cream-200 pb-4">
           <div>
             <h2 className="font-serif text-xl sm:text-2xl font-bold text-espresso-900 flex items-center gap-2">
               <i className="fa-solid fa-user-lock text-rosewarm-600" />
               <span>إدارة الحسابات، النقاط، وحظر المستخدمين ({users.length})</span>
             </h2>
-            <p className="text-xs text-espresso-800/70 mt-1">
-              يمكنك إضافة أو خصم نقاط الولاء لأي عميل يدوياً، أو تغيير صلاحيته، أو حظره من الدخول
-            </p>
+            <p className="text-xs text-espresso-800/70 mt-1">متابعة رصيد النقاط، إنذارات التعليقات المسيئة، وحظر الحسابات المخالفة</p>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -195,7 +193,6 @@ export default function UsersManager() {
               type="button"
               onClick={fetchUsers}
               className="bg-cream-100 hover:bg-cream-200 text-espresso-900 border border-cream-300 text-xs font-bold px-3.5 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer shrink-0"
-              title="تحديث القائمة"
             >
               <i className={`fa-solid fa-rotate ${loadingUsers ? "animate-spin" : ""}`} />
               <span>تحديث</span>
@@ -203,7 +200,6 @@ export default function UsersManager() {
           </div>
         </div>
 
-        {/* Users Table */}
         {loadingUsers ? (
           <div className="py-12 text-center text-sm font-bold text-espresso-800/60">جاري تحميل قائمة المستخدمين...</div>
         ) : filteredUsers.length === 0 ? (
@@ -215,7 +211,8 @@ export default function UsersManager() {
                 <tr className="border-b border-cream-200 text-espresso-800/70">
                   <th className="py-3 px-3 whitespace-nowrap">المستخدم</th>
                   <th className="py-3 px-3 whitespace-nowrap">الجوال / البريد</th>
-                  <th className="py-3 px-3 whitespace-nowrap">رصيد النقاط والتحكم</th>
+                  <th className="py-3 px-3 whitespace-nowrap">رصيد النقاط</th>
+                  <th className="py-3 px-3 whitespace-nowrap">إنذارات التقييمات</th>
                   <th className="py-3 px-3 whitespace-nowrap">الصلاحية</th>
                   <th className="py-3 px-3 whitespace-nowrap">الحالة</th>
                   <th className="py-3 px-3 text-left whitespace-nowrap">إجراء الحظر</th>
@@ -224,6 +221,8 @@ export default function UsersManager() {
               <tbody className="divide-y divide-cream-200/70">
                 {filteredUsers.map((u) => {
                   const blocked = Boolean(u.is_blocked);
+                  const strikes = Number(u.review_strikes || 0);
+
                   return (
                     <tr key={u.id} className={`transition ${blocked ? "bg-rose-50/60" : "hover:bg-cream-50"}`}>
                       <td className="py-3.5 px-3 font-bold text-espresso-900 whitespace-nowrap">{u.name || "مستخدم بدون اسم"}</td>
@@ -243,9 +242,25 @@ export default function UsersManager() {
                             className="bg-gold-100 hover:bg-gold-400 text-espresso-900 border border-gold-400/70 text-[11px] font-bold px-2.5 py-1 rounded-xl transition flex items-center gap-1 cursor-pointer"
                           >
                             <i className="fa-solid fa-sliders text-rosewarm-600 text-[10px]" />
-                            <span>تعديل النقاط</span>
+                            <span>تعديل</span>
                           </button>
                         </div>
+                      </td>
+
+                      {/* Review Strikes Column */}
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                            strikes === 0
+                              ? "bg-emerald-100 text-emerald-800"
+                              : strikes < 3
+                                ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                : "bg-rose-100 text-rose-800 border border-rose-300 animate-pulse"
+                          }`}
+                        >
+                          <i className="fa-solid fa-triangle-exclamation" />
+                          <span>{strikes} إنذارات</span>
+                        </span>
                       </td>
 
                       <td className="py-3.5 px-3 whitespace-nowrap">

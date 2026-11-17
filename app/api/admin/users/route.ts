@@ -22,7 +22,7 @@ export async function GET() {
     await ensureIsBlockedColumn();
 
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT id, name, phone_or_email, role, points_balance, is_blocked, created_at
+      `SELECT id, name, phone_or_email, role, points_balance, review_strikes, is_blocked, created_at
        FROM users
        ORDER BY id DESC`,
     );
